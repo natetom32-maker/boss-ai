@@ -377,17 +377,13 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "API Root and Health Endpoints"
-    - "Memory Engine - Event Sourcing"
-    - "Decisions CRUD"
-    - "Checkpoints CRUD"
-    - "Projects CRUD"
-    - "Boss AI - Message Endpoint"
+  current_focus: []
   stuck_tasks: []
-  test_all: true
+  test_all: false
   test_priority: "high_first"
 
 agent_communication:
   - agent: "main"
     message: "Boss AI MVP implementation complete. Backend includes Memory Engine with event sourcing (L0-L3 scopes), Google Auth integration, Decisions/Checkpoints/Projects CRUD, and Boss AI message endpoint with auto model selection. Please test all backend endpoints. Authentication testing should use test session tokens created in MongoDB. See /app/auth_testing.md for testing playbook."
+  - agent: "testing"
+    message: "✅ BACKEND TESTING COMPLETE: All 17 backend API tests passed successfully. Tested auth endpoints, memory engine (event sourcing), projects CRUD, decisions CRUD, checkpoints CRUD, and Boss AI message endpoint with checkpoint detection. All endpoints working correctly with proper authentication, data persistence, and response structures. Boss AI auto-selects models and properly triggers checkpoints for delete actions."
