@@ -141,9 +141,23 @@ export default function BossScreen() {
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
 
+  // D-ID Agent URL
+  const DID_AGENT_URL = 'https://boss-ai-1.preview.emergentagent.com/api/did-agent';
+
   useEffect(() => {
     fetchMemoryReceipt(currentProject?.project_id);
   }, [currentProject]);
+
+  // Function to open D-ID Agent
+  const openDIDAgent = () => {
+    if (Platform.OS === 'web') {
+      // Open in new tab/window for web
+      window.open(DID_AGENT_URL, '_blank', 'width=500,height=700');
+    } else {
+      // Use modal with WebView for mobile
+      setShowDIDAgent(true);
+    }
+  };
 
   const handleSend = async () => {
     if (!inputText.trim() || isLoading) return;
