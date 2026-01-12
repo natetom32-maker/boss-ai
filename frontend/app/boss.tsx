@@ -352,7 +352,7 @@ export default function BossScreen() {
           <View style={styles.emptyState}>
             <TouchableOpacity 
               style={styles.emptyAvatarContainer}
-              onPress={() => setShowDIDAgent(true)}
+              onPress={openDIDAgent}
             >
               <Video
                 source={{ uri: BOSS_AVATAR_VIDEOS[0] }}
