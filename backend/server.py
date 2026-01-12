@@ -714,9 +714,9 @@ async def _create_did_talk(script_text: str, voice_id: str = "en-US-JennyNeural"
         "Content-Type": "application/json"
     }
     
-    # Use the Boss AI avatar video as source
+    # Use the Boss AI avatar image as source
     payload = {
-        "source_url": BOSS_AVATAR_SOURCE,
+        "source_url": BOSS_AVATAR_IMAGE,
         "script": {
             "type": "text",
             "input": script_text,
