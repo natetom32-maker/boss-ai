@@ -700,8 +700,9 @@ async def get_project(
 
 # ================== D-ID AVATAR ==================
 
-# Boss AI Avatar source image URL (the topographic glowing face)
-BOSS_AVATAR_SOURCE = "https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/qfwcfoxo_generated_video.mp4"
+# Boss AI Avatar source image URL (need a static image for D-ID API)
+# Using a placeholder avatar image - in production, extract a frame from the video
+BOSS_AVATAR_IMAGE = "https://create-images-results.d-id.com/DefaultPresenters/Noelle_f/thumbnail.jpeg"
 
 async def _create_did_talk(script_text: str, voice_id: str = "en-US-JennyNeural") -> Dict[str, Any]:
     """Create a D-ID talk video"""
