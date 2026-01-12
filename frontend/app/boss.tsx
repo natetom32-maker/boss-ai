@@ -498,21 +498,40 @@ export default function BossScreen() {
             <View style={{ width: 44 }} />
           </View>
           
-          <WebView
-            source={{ html: DID_AGENT_HTML }}
-            style={styles.didWebView}
-            allowsInlineMediaPlayback={true}
-            mediaPlaybackRequiresUserAction={false}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            startInLoadingState={true}
-            renderLoading={() => (
-              <View style={styles.webViewLoading}>
-                <ActivityIndicator size="large" color="#6366F1" />
-                <Text style={styles.webViewLoadingText}>Loading Boss AI...</Text>
-              </View>
-            )}
-          />
+          {Platform.OS === 'web' ? (
+            <iframe
+              srcDoc={DID_AGENT_HTML}
+              style={{
+                flex: 1,
+                width: '100%',
+                height: '100%',
+                border: 'none',
+                backgroundColor: '#0A0A0F',
+              }}
+              allow="camera; microphone; autoplay"
+            />
+          ) : WebView ? (
+            <WebView
+              source={{ html: DID_AGENT_HTML }}
+              style={styles.didWebView}
+              allowsInlineMediaPlayback={true}
+              mediaPlaybackRequiresUserAction={false}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={styles.webViewLoading}>
+                  <ActivityIndicator size="large" color="#6366F1" />
+                  <Text style={styles.webViewLoadingText}>Loading Boss AI...</Text>
+                </View>
+              )}
+            />
+          ) : (
+            <View style={styles.webViewLoading}>
+              <ActivityIndicator size="large" color="#6366F1" />
+              <Text style={styles.webViewLoadingText}>Loading Boss AI...</Text>
+            </View>
+          )}
         </View>
       </Modal>
 
