@@ -7,10 +7,14 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
+import { Video, ResizeMode } from 'expo-av';
 import { useAuth } from '../src/context/AuthContext';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+
+// Boss AI Avatar Video URL
+const BOSS_AVATAR_VIDEO = 'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/qfwcfoxo_generated_video.mp4';
 
 export default function Index() {
   const { isAuthenticated, isLoading, login, user } = useAuth();
