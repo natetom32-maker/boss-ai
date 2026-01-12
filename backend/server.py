@@ -10,6 +10,8 @@ from typing import List, Optional, Dict, Any, Literal
 import uuid
 from datetime import datetime, timezone, timedelta
 import httpx
+import asyncio
+import base64
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 ROOT_DIR = Path(__file__).parent
@@ -22,6 +24,10 @@ db = client[os.environ['DB_NAME']]
 
 # Emergent LLM Key
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+
+# D-ID API Key
+DID_API_KEY = os.environ.get('DID_API_KEY', '')
+DID_API_BASE = 'https://api.d-id.com'
 
 # Create the main app
 app = FastAPI(title="Boss AI - Operating Layer")
@@ -168,6 +174,7 @@ class BossMessage(BaseModel):
     message: str
     project_id: Optional[str] = None
     include_memory: bool = True
+    generate_video: bool = False  # Whether to generate D-ID avatar video
 
 class BossResponse(BaseModel):
     response: str
@@ -175,6 +182,8 @@ class BossResponse(BaseModel):
     decisions_made: List[str] = Field(default_factory=list)
     checkpoint_required: Optional[Dict[str, Any]] = None
     model_used: str
+    video_url: Optional[str] = None  # D-ID generated video URL
+    video_status: Optional[str] = None  # pending, processing, completed, failed
 
 # Memory Receipt (trust feature)
 class MemoryReceipt(BaseModel):
@@ -182,6 +191,22 @@ class MemoryReceipt(BaseModel):
     items_count: int
     items_used: List[Dict[str, str]]
     why_used: str
+
+# D-ID Avatar Video
+class AvatarVideo(BaseModel):
+    video_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    did_talk_id: Optional[str] = None
+    script_text: str
+    status: str = "pending"  # pending, processing, completed, failed
+    result_video_url: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class GenerateAvatarVideoRequest(BaseModel):
+    script_text: str
+    voice_id: Optional[str] = "en-US-JennyNeural"  # Microsoft TTS voice
 
 # ================== AUTH HELPERS ==================
 
@@ -673,6 +698,205 @@ async def get_project(
     
     return project
 
+# ================== D-ID AVATAR ==================
+
+# Boss AI Avatar source image URL (the topographic glowing face)
+BOSS_AVATAR_SOURCE = "https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/qfwcfoxo_generated_video.mp4"
+
+async def _create_did_talk(script_text: str, voice_id: str = "en-US-JennyNeural") -> Dict[str, Any]:
+    """Create a D-ID talk video"""
+    if not DID_API_KEY:
+        raise HTTPException(status_code=500, detail="D-ID API key not configured")
+    
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    # Use the Boss AI avatar video as source
+    payload = {
+        "source_url": BOSS_AVATAR_SOURCE,
+        "script": {
+            "type": "text",
+            "input": script_text,
+            "provider": {
+                "type": "microsoft",
+                "voice_id": voice_id
+            }
+        },
+        "config": {
+            "fluent": True,
+            "pad_audio": 0.5
+        }
+    }
+    
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(
+            f"{DID_API_BASE}/talks",
+            headers=headers,
+            json=payload
+        )
+        
+        if response.status_code != 201 and response.status_code != 200:
+            logger.error(f"D-ID API error: {response.status_code} - {response.text}")
+            raise HTTPException(status_code=500, detail=f"D-ID API error: {response.text}")
+        
+        return response.json()
+
+async def _get_did_talk_status(talk_id: str) -> Dict[str, Any]:
+    """Get D-ID talk video status"""
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}"
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            f"{DID_API_BASE}/talks/{talk_id}",
+            headers=headers
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"D-ID status error: {response.status_code} - {response.text}")
+            raise HTTPException(status_code=500, detail=f"D-ID API error: {response.text}")
+        
+        return response.json()
+
+async def _poll_did_completion(video_id: str, talk_id: str, max_attempts: int = 60):
+    """Poll D-ID API for video completion"""
+    for attempt in range(max_attempts):
+        await asyncio.sleep(2)  # Wait 2 seconds between polls
+        
+        try:
+            status_data = await _get_did_talk_status(talk_id)
+            
+            if status_data.get("status") == "done":
+                # Update database with completed video
+                await db.avatar_videos.update_one(
+                    {"video_id": video_id},
+                    {
+                        "$set": {
+                            "status": "completed",
+                            "result_video_url": status_data.get("result_url"),
+                            "updated_at": datetime.now(timezone.utc)
+                        }
+                    }
+                )
+                return
+            elif status_data.get("status") == "error":
+                await db.avatar_videos.update_one(
+                    {"video_id": video_id},
+                    {
+                        "$set": {
+                            "status": "failed",
+                            "error_message": status_data.get("error", {}).get("description", "Unknown error"),
+                            "updated_at": datetime.now(timezone.utc)
+                        }
+                    }
+                )
+                return
+        except Exception as e:
+            logger.error(f"Polling error: {e}")
+    
+    # Timeout
+    await db.avatar_videos.update_one(
+        {"video_id": video_id},
+        {
+            "$set": {
+                "status": "failed",
+                "error_message": "Timeout waiting for video generation",
+                "updated_at": datetime.now(timezone.utc)
+            }
+        }
+    )
+
+@api_router.post("/avatar/generate")
+async def generate_avatar_video(
+    request_data: GenerateAvatarVideoRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Generate a D-ID talking avatar video"""
+    # Truncate script if too long
+    script_text = request_data.script_text[:500]  # D-ID has limits
+    
+    # Create video record
+    video = AvatarVideo(
+        user_id=current_user.user_id,
+        script_text=script_text,
+        status="processing"
+    )
+    
+    await db.avatar_videos.insert_one(video.model_dump())
+    
+    try:
+        # Create D-ID talk
+        did_response = await _create_did_talk(script_text, request_data.voice_id)
+        talk_id = did_response.get("id")
+        
+        # Update with D-ID talk ID
+        await db.avatar_videos.update_one(
+            {"video_id": video.video_id},
+            {"$set": {"did_talk_id": talk_id}}
+        )
+        
+        # Start background polling (non-blocking)
+        asyncio.create_task(_poll_did_completion(video.video_id, talk_id))
+        
+        return {
+            "video_id": video.video_id,
+            "status": "processing",
+            "message": "Video generation started"
+        }
+        
+    except Exception as e:
+        logger.error(f"Avatar generation error: {e}")
+        await db.avatar_videos.update_one(
+            {"video_id": video.video_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error_message": str(e),
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/avatar/status/{video_id}")
+async def get_avatar_video_status(
+    video_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get avatar video generation status"""
+    video = await db.avatar_videos.find_one(
+        {"video_id": video_id, "user_id": current_user.user_id},
+        {"_id": 0}
+    )
+    
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    return {
+        "video_id": video["video_id"],
+        "status": video["status"],
+        "result_video_url": video.get("result_video_url"),
+        "error_message": video.get("error_message"),
+        "created_at": video["created_at"],
+        "updated_at": video["updated_at"]
+    }
+
+@api_router.get("/avatar/videos")
+async def get_avatar_videos(
+    limit: int = 20,
+    current_user: User = Depends(get_current_user)
+):
+    """Get user's avatar videos"""
+    videos = await db.avatar_videos.find(
+        {"user_id": current_user.user_id},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    
+    return videos
+
 # ================== BOSS AI ==================
 
 # Available models for auto-selection
@@ -747,7 +971,7 @@ async def send_boss_message(
         await db.checkpoints.insert_one(checkpoint.model_dump())
         
         return BossResponse(
-            response=f"⚠️ Checkpoint Required: {checkpoint_info['reason']}. Please approve this action before I proceed.",
+            response=f"Checkpoint Required: {checkpoint_info['reason']}. Please approve this action before I proceed.",
             memory_used=[],
             decisions_made=[],
             checkpoint_required={
@@ -815,12 +1039,41 @@ When responding:
             project_id=message_data.project_id
         )
         
+        # Generate avatar video if requested
+        video_url = None
+        video_status = None
+        if message_data.generate_video and DID_API_KEY:
+            try:
+                # Create video asynchronously
+                video = AvatarVideo(
+                    user_id=current_user.user_id,
+                    script_text=response[:500],
+                    status="processing"
+                )
+                await db.avatar_videos.insert_one(video.model_dump())
+                
+                did_response = await _create_did_talk(response[:500])
+                talk_id = did_response.get("id")
+                
+                await db.avatar_videos.update_one(
+                    {"video_id": video.video_id},
+                    {"$set": {"did_talk_id": talk_id}}
+                )
+                
+                asyncio.create_task(_poll_did_completion(video.video_id, talk_id))
+                video_status = "processing"
+            except Exception as e:
+                logger.error(f"Video generation error: {e}")
+                video_status = "failed"
+        
         return BossResponse(
             response=response,
             memory_used=[{"key": m["key"], "scope": m["scope"]} for m in memory_items],
             decisions_made=[],
             checkpoint_required=None,
-            model_used=f"{selected_model['provider']}/{selected_model['model']}"
+            model_used=f"{selected_model['provider']}/{selected_model['model']}",
+            video_url=video_url,
+            video_status=video_status
         )
         
     except Exception as e:
