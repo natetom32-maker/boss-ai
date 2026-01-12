@@ -152,7 +152,9 @@ export default function BossScreen() {
   const openDIDAgent = () => {
     if (Platform.OS === 'web') {
       // Open in new tab/window for web
-      window.open(DID_AGENT_URL, '_blank', 'width=500,height=700');
+      if (typeof window !== 'undefined') {
+        window.open(DID_AGENT_URL, '_blank', 'width=500,height=700');
+      }
     } else {
       // Use modal with WebView for mobile
       setShowDIDAgent(true);
