@@ -682,7 +682,7 @@ export default function BossScreen() {
               style={styles.menuItem}
               onPress={() => {
                 setShowSettings(false);
-                setShowDIDAgent(true);
+                openDIDAgent();
               }}
             >
               <Ionicons name="mic" size={20} color="#6366F1" />
