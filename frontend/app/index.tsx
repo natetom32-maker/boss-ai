@@ -109,8 +109,14 @@ export default function Index() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.heroSection}>
         <View style={styles.bossAvatarLarge}>
-          <Ionicons name="hardware-chip" size={80} color="#6366F1" />
-          <View style={styles.avatarGlow} />
+          <Video
+            source={{ uri: BOSS_AVATAR_VIDEO }}
+            style={styles.avatarVideo}
+            resizeMode={ResizeMode.COVER}
+            shouldPlay={true}
+            isLooping={true}
+            isMuted={true}
+          />
         </View>
         
         <Text style={styles.title}>Boss AI</Text>
