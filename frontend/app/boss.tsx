@@ -285,7 +285,7 @@ export default function BossScreen() {
         
         <TouchableOpacity 
           style={styles.headerCenter}
-          onPress={() => setShowDIDAgent(true)}
+          onPress={openDIDAgent}
         >
           <View style={styles.avatarContainer}>
             <Video
