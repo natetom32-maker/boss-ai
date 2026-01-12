@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { WebView } from 'react-native-webview';
 import { useBossStore } from '../src/store/bossStore';
 import { useAuth } from '../src/context/AuthContext';
 import api from '../src/services/api';
@@ -42,6 +43,44 @@ const BOSS_AVATAR_VIDEOS = [
   'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/dezhrl51_generated_2video.mp4',
 ];
 
+// D-ID Agent Configuration
+const DID_AGENT_HTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { 
+      width: 100%; 
+      height: 100%; 
+      background: #0A0A0F;
+      overflow: hidden;
+    }
+    #did-agent-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="did-agent-container"></div>
+  <script type="module"
+    src="https://agent.d-id.com/v2/index.js"
+    data-mode="full"
+    data-client-key="Z29vZ2xlLW9hdXRoMnwxMTM0MDI1Nzg1OTM5NTA5MTQ3OTU6b0dOeW5WYnJfb0drTU1DVDRoMWJ1"
+    data-agent-id="v2_agt_nerHDMzz"
+    data-name="did-agent"
+    data-monitor="true"
+    data-target-id="did-agent-container">
+  </script>
+</body>
+</html>
+`;
+
 export default function BossScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -65,6 +104,7 @@ export default function BossScreen() {
   const [isAvatarPlaying, setIsAvatarPlaying] = useState(false);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [showDIDAgent, setShowDIDAgent] = useState(false);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
 
@@ -196,7 +236,7 @@ export default function BossScreen() {
         
         <TouchableOpacity 
           style={styles.headerCenter}
-          onPress={() => setShowAvatarModal(true)}
+          onPress={() => setShowDIDAgent(true)}
         >
           <View style={styles.avatarContainer}>
             <Video
@@ -219,6 +259,14 @@ export default function BossScreen() {
               <Text style={styles.projectBadge}>{currentProject.name}</Text>
             )}
           </View>
+        </TouchableOpacity>
+
+        {/* Talk to Avatar Button */}
+        <TouchableOpacity
+          onPress={() => setShowDIDAgent(true)}
+          style={styles.talkButton}
+        >
+          <Ionicons name="mic" size={20} color="#6366F1" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -255,9 +303,7 @@ export default function BossScreen() {
           <View style={styles.emptyState}>
             <TouchableOpacity 
               style={styles.emptyAvatarContainer}
-              onPress={() => {
-                playAvatarAnimation();
-              }}
+              onPress={() => setShowDIDAgent(true)}
             >
               <Video
                 source={{ uri: BOSS_AVATAR_VIDEOS[0] }}
@@ -267,11 +313,15 @@ export default function BossScreen() {
                 isLooping={true}
                 isMuted={true}
               />
+              <View style={styles.talkOverlay}>
+                <Ionicons name="mic" size={32} color="#FFF" />
+                <Text style={styles.talkOverlayText}>Tap to Talk</Text>
+              </View>
             </TouchableOpacity>
             <Text style={styles.emptyTitle}>Boss is ready</Text>
             <Text style={styles.emptySubtitle}>
-              Tell me what you need. I'll proceed automatically and only pause
-              at checkpoints.
+              Tap the avatar to talk with Boss, or type below.
+              I'll proceed automatically and only pause at checkpoints.
             </Text>
           </View>
         )}
@@ -391,6 +441,12 @@ export default function BossScreen() {
 
       {/* Input */}
       <View style={[styles.inputContainer, { paddingBottom: insets.bottom + 8 }]}>
+        <TouchableOpacity
+          style={styles.micButton}
+          onPress={() => setShowDIDAgent(true)}
+        >
+          <Ionicons name="mic" size={22} color="#6366F1" />
+        </TouchableOpacity>
         <TextInput
           style={styles.input}
           value={inputText}
@@ -417,6 +473,43 @@ export default function BossScreen() {
           />
         </TouchableOpacity>
       </View>
+
+      {/* D-ID Agent Modal (Full Screen Interactive Avatar) */}
+      <Modal
+        visible={showDIDAgent}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowDIDAgent(false)}
+      >
+        <View style={[styles.didAgentContainer, { paddingTop: insets.top }]}>
+          <View style={styles.didAgentHeader}>
+            <TouchableOpacity
+              style={styles.closeDidButton}
+              onPress={() => setShowDIDAgent(false)}
+            >
+              <Ionicons name="close" size={28} color="#FFF" />
+            </TouchableOpacity>
+            <Text style={styles.didAgentTitle}>Talk to Boss AI</Text>
+            <View style={{ width: 44 }} />
+          </View>
+          
+          <WebView
+            source={{ html: DID_AGENT_HTML }}
+            style={styles.didWebView}
+            allowsInlineMediaPlayback={true}
+            mediaPlaybackRequiresUserAction={false}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={true}
+            renderLoading={() => (
+              <View style={styles.webViewLoading}>
+                <ActivityIndicator size="large" color="#6366F1" />
+                <Text style={styles.webViewLoadingText}>Loading Boss AI...</Text>
+              </View>
+            )}
+          />
+        </View>
+      </Modal>
 
       {/* Avatar Video Modal */}
       <Modal
@@ -521,6 +614,17 @@ export default function BossScreen() {
               style={styles.menuItem}
               onPress={() => {
                 setShowSettings(false);
+                setShowDIDAgent(true);
+              }}
+            >
+              <Ionicons name="mic" size={20} color="#6366F1" />
+              <Text style={styles.menuText}>Talk to Boss</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setShowSettings(false);
                 router.push('/memory');
               }}
             >
@@ -556,7 +660,7 @@ export default function BossScreen() {
   );
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
   container: {
@@ -614,6 +718,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  talkButton: {
+    padding: 10,
+    backgroundColor: '#1A1A2E',
+    borderRadius: 20,
+    marginRight: 8,
+  },
   settingsButton: {
     padding: 8,
   },
@@ -660,17 +770,34 @@ const styles = StyleSheet.create({
     paddingTop: 60,
   },
   emptyAvatarContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
     overflow: 'hidden',
     backgroundColor: '#1A1A2E',
     borderWidth: 3,
     borderColor: '#6366F1',
+    position: 'relative',
   },
   emptyAvatarVideo: {
     width: '100%',
     height: '100%',
+  },
+  talkOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(99, 102, 241, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  talkOverlayText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
   },
   emptyTitle: {
     color: '#FFF',
@@ -844,6 +971,15 @@ const styles = StyleSheet.create({
     borderTopColor: '#1A1A2E',
     backgroundColor: '#0A0A0F',
   },
+  micButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#1A1A2E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
   input: {
     flex: 1,
     backgroundColor: '#1A1A2E',
@@ -865,6 +1001,47 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#1A1A2E',
+  },
+  // D-ID Agent Styles
+  didAgentContainer: {
+    flex: 1,
+    backgroundColor: '#0A0A0F',
+  },
+  didAgentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1A1A2E',
+  },
+  closeDidButton: {
+    padding: 8,
+  },
+  didAgentTitle: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  didWebView: {
+    flex: 1,
+    backgroundColor: '#0A0A0F',
+  },
+  webViewLoading: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0A0A0F',
+  },
+  webViewLoadingText: {
+    color: '#888',
+    fontSize: 14,
+    marginTop: 16,
   },
   avatarModalOverlay: {
     flex: 1,
