@@ -492,7 +492,7 @@ export default function BossScreen() {
       <View style={[styles.inputContainer, { paddingBottom: insets.bottom + 8 }]}>
         <TouchableOpacity
           style={styles.micButton}
-          onPress={() => setShowDIDAgent(true)}
+          onPress={openDIDAgent}
         >
           <Ionicons name="mic" size={22} color="#6366F1" />
         </TouchableOpacity>
