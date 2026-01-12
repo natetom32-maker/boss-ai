@@ -10,12 +10,15 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { useBossStore } from '../src/store/bossStore';
 import { useAuth } from '../src/context/AuthContext';
+import api from '../src/services/api';
 
 interface Message {
   id: string;
@@ -29,12 +32,21 @@ interface Message {
     type: string;
     reason: string;
   };
+  videoStatus?: string;
 }
+
+// Boss AI Avatar Video URLs (the topographic glowing face)
+const BOSS_AVATAR_VIDEOS = [
+  'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/qfwcfoxo_generated_video.mp4',
+  'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/srtfk7f5_generated_1video_hd.mp4',
+  'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/dezhrl51_generated_2video.mp4',
+];
 
 export default function BossScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
+  const videoRef = useRef<Video>(null);
   const { user, logout } = useAuth();
   
   const {
@@ -50,6 +62,11 @@ export default function BossScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [showMemoryReceipt, setShowMemoryReceipt] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isAvatarPlaying, setIsAvatarPlaying] = useState(false);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
 
   useEffect(() => {
     fetchMemoryReceipt(currentProject?.project_id);
@@ -66,11 +83,12 @@ export default function BossScreen() {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const messageText = inputText.trim();
     setInputText('');
 
     try {
       const response = await sendMessage(
-        inputText.trim(),
+        messageText,
         currentProject?.project_id
       );
 
@@ -82,10 +100,14 @@ export default function BossScreen() {
         memoryUsed: response.memory_used,
         modelUsed: response.model_used,
         checkpointRequired: response.checkpoint_required,
+        videoStatus: response.video_status,
       };
 
       setMessages(prev => [...prev, bossMessage]);
       fetchMemoryReceipt(currentProject?.project_id);
+      
+      // Play avatar animation when Boss responds
+      playAvatarAnimation();
     } catch (error: any) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -99,11 +121,60 @@ export default function BossScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
+  const playAvatarAnimation = () => {
+    setIsAvatarPlaying(true);
+    // Cycle through videos
+    setCurrentVideoIndex(prev => (prev + 1) % BOSS_AVATAR_VIDEOS.length);
+  };
+
+  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
+    if (status.isLoaded && status.didJustFinish) {
+      setIsAvatarPlaying(false);
+    }
+  };
+
   const handleCheckpointResolve = async (
     checkpointId: string,
     status: 'APPROVED' | 'REJECTED'
   ) => {
     await resolveCheckpoint(checkpointId, status);
+  };
+
+  const generateAvatarVideo = async (text: string) => {
+    try {
+      setIsGeneratingVideo(true);
+      const response = await api.post('/avatar/generate', {
+        script_text: text.substring(0, 300),
+        voice_id: 'en-US-JennyNeural'
+      });
+      
+      const videoId = response.data.video_id;
+      
+      // Poll for completion
+      let attempts = 0;
+      const maxAttempts = 60;
+      
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const statusResponse = await api.get(`/avatar/status/${videoId}`);
+        
+        if (statusResponse.data.status === 'completed') {
+          setGeneratedVideoUrl(statusResponse.data.result_video_url);
+          setShowAvatarModal(true);
+          break;
+        } else if (statusResponse.data.status === 'failed') {
+          console.error('Video generation failed:', statusResponse.data.error_message);
+          break;
+        }
+        
+        attempts++;
+      }
+    } catch (error) {
+      console.error('Error generating avatar video:', error);
+    } finally {
+      setIsGeneratingVideo(false);
+    }
   };
 
   const totalMemoryItems = memoryReceipt.reduce(
@@ -117,15 +188,30 @@ export default function BossScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
-      {/* Header */}
+      {/* Header with Avatar */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color="#FFF" />
         </TouchableOpacity>
         
-        <View style={styles.headerCenter}>
-          <View style={styles.bossAvatar}>
-            <Ionicons name="hardware-chip" size={24} color="#6366F1" />
+        <TouchableOpacity 
+          style={styles.headerCenter}
+          onPress={() => setShowAvatarModal(true)}
+        >
+          <View style={styles.avatarContainer}>
+            <Video
+              ref={videoRef}
+              source={{ uri: BOSS_AVATAR_VIDEOS[currentVideoIndex] }}
+              style={styles.avatarVideo}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={isAvatarPlaying}
+              isLooping={false}
+              isMuted={true}
+              onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+            />
+            {isAvatarPlaying && (
+              <View style={styles.avatarGlow} />
+            )}
           </View>
           <View>
             <Text style={styles.headerTitle}>Boss AI</Text>
@@ -133,7 +219,7 @@ export default function BossScreen() {
               <Text style={styles.projectBadge}>{currentProject.name}</Text>
             )}
           </View>
-        </View>
+        </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => setShowSettings(true)}
@@ -167,7 +253,21 @@ export default function BossScreen() {
       >
         {messages.length === 0 && (
           <View style={styles.emptyState}>
-            <Ionicons name="flash" size={48} color="#333" />
+            <TouchableOpacity 
+              style={styles.emptyAvatarContainer}
+              onPress={() => {
+                playAvatarAnimation();
+              }}
+            >
+              <Video
+                source={{ uri: BOSS_AVATAR_VIDEOS[0] }}
+                style={styles.emptyAvatarVideo}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay={true}
+                isLooping={true}
+                isMuted={true}
+              />
+            </TouchableOpacity>
             <Text style={styles.emptyTitle}>Boss is ready</Text>
             <Text style={styles.emptySubtitle}>
               Tell me what you need. I'll proceed automatically and only pause
@@ -186,10 +286,30 @@ export default function BossScreen() {
           >
             {msg.type === 'boss' && (
               <View style={styles.bossHeader}>
-                <Ionicons name="hardware-chip" size={16} color="#6366F1" />
+                <View style={styles.bossAvatarSmall}>
+                  <Video
+                    source={{ uri: BOSS_AVATAR_VIDEOS[currentVideoIndex] }}
+                    style={styles.bossAvatarSmallVideo}
+                    resizeMode={ResizeMode.COVER}
+                    shouldPlay={false}
+                    isMuted={true}
+                  />
+                </View>
                 {msg.modelUsed && (
                   <Text style={styles.modelBadge}>{msg.modelUsed}</Text>
                 )}
+                {/* Generate Video Button */}
+                <TouchableOpacity
+                  style={styles.videoButton}
+                  onPress={() => generateAvatarVideo(msg.content)}
+                  disabled={isGeneratingVideo}
+                >
+                  {isGeneratingVideo ? (
+                    <ActivityIndicator size="small" color="#6366F1" />
+                  ) : (
+                    <Ionicons name="videocam" size={14} color="#6366F1" />
+                  )}
+                </TouchableOpacity>
               </View>
             )}
             
@@ -254,7 +374,16 @@ export default function BossScreen() {
 
         {isLoading && (
           <View style={styles.loadingBubble}>
-            <ActivityIndicator size="small" color="#6366F1" />
+            <View style={styles.loadingAvatar}>
+              <Video
+                source={{ uri: BOSS_AVATAR_VIDEOS[currentVideoIndex] }}
+                style={styles.loadingAvatarVideo}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay={true}
+                isLooping={true}
+                isMuted={true}
+              />
+            </View>
             <Text style={styles.loadingText}>Boss is thinking...</Text>
           </View>
         )}
@@ -288,6 +417,39 @@ export default function BossScreen() {
           />
         </TouchableOpacity>
       </View>
+
+      {/* Avatar Video Modal */}
+      <Modal
+        visible={showAvatarModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowAvatarModal(false)}
+      >
+        <View style={styles.avatarModalOverlay}>
+          <View style={styles.avatarModalContent}>
+            <TouchableOpacity
+              style={styles.closeAvatarButton}
+              onPress={() => setShowAvatarModal(false)}
+            >
+              <Ionicons name="close" size={28} color="#FFF" />
+            </TouchableOpacity>
+            
+            <Video
+              source={{ uri: generatedVideoUrl || BOSS_AVATAR_VIDEOS[currentVideoIndex] }}
+              style={styles.fullAvatarVideo}
+              resizeMode={ResizeMode.CONTAIN}
+              shouldPlay={true}
+              isLooping={!generatedVideoUrl}
+              useNativeControls={!!generatedVideoUrl}
+            />
+            
+            <Text style={styles.avatarModalTitle}>Boss AI</Text>
+            <Text style={styles.avatarModalSubtitle}>
+              {generatedVideoUrl ? 'Generated Response' : 'Operating Layer'}
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       {/* Memory Receipt Modal */}
       <Modal
@@ -394,6 +556,8 @@ export default function BossScreen() {
   );
 }
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -416,14 +580,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 8,
   },
-  bossAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  avatarContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    overflow: 'hidden',
     backgroundColor: '#1A1A2E',
-    justifyContent: 'center',
-    alignItems: 'center',
     marginRight: 12,
+    borderWidth: 2,
+    borderColor: '#6366F1',
+  },
+  avatarVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarGlow: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: '#F59E0B',
   },
   headerTitle: {
     color: '#FFF',
@@ -478,13 +657,26 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 100,
+    paddingTop: 60,
+  },
+  emptyAvatarContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    overflow: 'hidden',
+    backgroundColor: '#1A1A2E',
+    borderWidth: 3,
+    borderColor: '#6366F1',
+  },
+  emptyAvatarVideo: {
+    width: '100%',
+    height: '100%',
   },
   emptyTitle: {
     color: '#FFF',
     fontSize: 20,
     fontWeight: '600',
-    marginTop: 16,
+    marginTop: 20,
   },
   emptySubtitle: {
     color: '#666',
@@ -515,6 +707,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  bossAvatarSmall: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#0A0A0F',
+  },
+  bossAvatarSmallVideo: {
+    width: '100%',
+    height: '100%',
+  },
   modelBadge: {
     color: '#666',
     fontSize: 10,
@@ -523,6 +726,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
+    flex: 1,
+  },
+  videoButton: {
+    padding: 4,
+    marginLeft: 8,
   },
   messageText: {
     fontSize: 15,
@@ -611,6 +819,17 @@ const styles = StyleSheet.create({
     padding: 14,
     alignSelf: 'flex-start',
   },
+  loadingAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#0A0A0F',
+  },
+  loadingAvatarVideo: {
+    width: '100%',
+    height: '100%',
+  },
   loadingText: {
     color: '#888',
     fontSize: 14,
@@ -646,6 +865,41 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#1A1A2E',
+  },
+  avatarModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarModalContent: {
+    width: SCREEN_WIDTH * 0.9,
+    maxWidth: 400,
+    alignItems: 'center',
+  },
+  closeAvatarButton: {
+    position: 'absolute',
+    top: -50,
+    right: 0,
+    padding: 10,
+    zIndex: 10,
+  },
+  fullAvatarVideo: {
+    width: SCREEN_WIDTH * 0.85,
+    height: SCREEN_WIDTH * 0.85,
+    borderRadius: 20,
+    backgroundColor: '#1A1A2E',
+  },
+  avatarModalTitle: {
+    color: '#FFF',
+    fontSize: 24,
+    fontWeight: '700',
+    marginTop: 20,
+  },
+  avatarModalSubtitle: {
+    color: '#6366F1',
+    fontSize: 14,
+    marginTop: 4,
   },
   modalOverlay: {
     flex: 1,
