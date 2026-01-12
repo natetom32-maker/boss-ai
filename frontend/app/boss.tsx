@@ -53,7 +53,9 @@ const DID_AGENT_HTML = `
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Boss AI - Talk</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { 
@@ -69,10 +71,32 @@ const DID_AGENT_HTML = `
       justify-content: center;
       align-items: center;
     }
+    .loading {
+      color: #888;
+      font-family: system-ui, -apple-system, sans-serif;
+      text-align: center;
+    }
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #333;
+      border-top-color: #6366F1;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
-  <div id="did-agent-container"></div>
+  <div id="did-agent-container">
+    <div class="loading">
+      <div class="loading-spinner"></div>
+      <p>Loading Boss AI...</p>
+    </div>
+  </div>
   <script type="module"
     src="https://agent.d-id.com/v2/index.js"
     data-mode="full"
@@ -85,6 +109,9 @@ const DID_AGENT_HTML = `
 </body>
 </html>
 `;
+
+// D-ID Agent URL for web (opens in popup/new tab)
+const DID_AGENT_URL = `data:text/html;charset=utf-8,${encodeURIComponent(DID_AGENT_HTML)}`;
 
 export default function BossScreen() {
   const insets = useSafeAreaInsets();
