@@ -312,7 +312,7 @@ export default function BossScreen() {
 
         {/* Talk to Avatar Button */}
         <TouchableOpacity
-          onPress={() => setShowDIDAgent(true)}
+          onPress={openDIDAgent}
           style={styles.talkButton}
         >
           <Ionicons name="mic" size={20} color="#6366F1" />
