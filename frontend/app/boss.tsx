@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Modal,
   Dimensions,
-  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,11 +20,18 @@ import { useBossStore } from '../src/store/bossStore';
 import { useAuth } from '../src/context/AuthContext';
 import api from '../src/services/api';
 
-// Conditionally import WebView only for native platforms
-let WebView: any = null;
-if (Platform.OS !== 'web') {
-  WebView = require('react-native-webview').WebView;
-}
+/**
+ * UNIFIED BOSS AI ARCHITECTURE
+ * 
+ * Boss AI Core (memory + autopilot + checkpoints)
+ *        ↑
+ *   API boundary (/api/boss/message, /api/memory, etc.)
+ *        ↑
+ * UI / D-ID Avatar (presentation layer only)
+ * 
+ * The avatar speaks what Boss decides.
+ * Boss does not live inside the avatar.
+ */
 
 interface Message {
   id: string;
@@ -39,86 +45,21 @@ interface Message {
     type: string;
     reason: string;
   };
-  videoStatus?: string;
+  avatarVideoUrl?: string;
+  avatarStatus?: 'generating' | 'ready' | 'failed';
 }
 
-// Boss AI Avatar Video URLs (the topographic glowing face)
+// Boss AI Avatar Videos (static visual representation)
 const BOSS_AVATAR_VIDEOS = [
   'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/qfwcfoxo_generated_video.mp4',
   'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/srtfk7f5_generated_1video_hd.mp4',
   'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/dezhrl51_generated_2video.mp4',
 ];
 
-// D-ID Agent Configuration
-const DID_AGENT_HTML = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Boss AI - Talk</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { 
-      width: 100%; 
-      height: 100%; 
-      background: #0A0A0F;
-      overflow: hidden;
-    }
-    #did-agent-container {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    .loading {
-      color: #888;
-      font-family: system-ui, -apple-system, sans-serif;
-      text-align: center;
-    }
-    .loading-spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid #333;
-      border-top-color: #6366F1;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 16px;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-  </style>
-</head>
-<body>
-  <div id="did-agent-container">
-    <div class="loading">
-      <div class="loading-spinner"></div>
-      <p>Loading Boss AI...</p>
-    </div>
-  </div>
-  <script type="module"
-    src="https://agent.d-id.com/v2/index.js"
-    data-mode="full"
-    data-client-key="Z29vZ2xlLW9hdXRoMnwxMTM0MDI1Nzg1OTM5NTA5MTQ3OTU6b0dOeW5WYnJfb0drTU1DVDRoMWJ1"
-    data-agent-id="v2_agt_M6rCWkOz"
-    data-name="did-agent"
-    data-monitor="true"
-    data-target-id="did-agent-container">
-  </script>
-</body>
-</html>
-`;
-
-// D-ID Agent URL for web (opens in popup/new tab)
-const DID_AGENT_URL = `data:text/html;charset=utf-8,${encodeURIComponent(DID_AGENT_HTML)}`;
-
 export default function BossScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
-  const videoRef = useRef<Video>(null);
   const { user, logout } = useAuth();
   
   const {
@@ -134,34 +75,26 @@ export default function BossScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [showMemoryReceipt, setShowMemoryReceipt] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [isAvatarPlaying, setIsAvatarPlaying] = useState(false);
+  const [isAvatarSpeaking, setIsAvatarSpeaking] = useState(false);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
-  const [showDIDAgent, setShowDIDAgent] = useState(false);
-  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
-  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-
-  // D-ID Agent URL
-  const DID_AGENT_URL = 'https://boss-ai-1.preview.emergentagent.com/api/did-agent';
+  const [currentSpeakingVideo, setCurrentSpeakingVideo] = useState<string | null>(null);
+  const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false);
 
   useEffect(() => {
     fetchMemoryReceipt(currentProject?.project_id);
   }, [currentProject]);
 
-  // Function to open D-ID Agent
-  const openDIDAgent = () => {
-    if (Platform.OS === 'web') {
-      // Open in new tab/window for web
-      if (typeof window !== 'undefined') {
-        window.open(DID_AGENT_URL, '_blank', 'width=500,height=700');
-      }
-    } else {
-      // Use modal with WebView for mobile
-      setShowDIDAgent(true);
-    }
-  };
-
-  const handleSend = async () => {
+  /**
+   * UNIFIED FLOW:
+   * 1. User input (text)
+   * 2. Send to Boss AI Core (/api/boss/message)
+   * 3. Boss AI processes with memory, autopilot, checkpoints
+   * 4. Boss AI returns response
+   * 5. Generate D-ID avatar video of Boss's response (optional)
+   * 6. Display response + avatar video
+   */
+  const handleSend = async (generateAvatar: boolean = false) => {
     if (!inputText.trim() || isLoading) return;
 
     const userMessage: Message = {
@@ -176,11 +109,13 @@ export default function BossScreen() {
     setInputText('');
 
     try {
+      // Step 1: Send to Boss AI Core
       const response = await sendMessage(
         messageText,
         currentProject?.project_id
       );
 
+      // Step 2: Create Boss response message
       const bossMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'boss',
@@ -189,14 +124,17 @@ export default function BossScreen() {
         memoryUsed: response.memory_used,
         modelUsed: response.model_used,
         checkpointRequired: response.checkpoint_required,
-        videoStatus: response.video_status,
+        avatarStatus: generateAvatar ? 'generating' : undefined,
       };
 
       setMessages(prev => [...prev, bossMessage]);
       fetchMemoryReceipt(currentProject?.project_id);
+
+      // Step 3: If avatar requested, generate D-ID video of Boss's response
+      if (generateAvatar && !response.checkpoint_required) {
+        generateAvatarForMessage(bossMessage.id, response.response);
+      }
       
-      // Play avatar animation when Boss responds
-      playAvatarAnimation();
     } catch (error: any) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -210,31 +148,18 @@ export default function BossScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
-  const playAvatarAnimation = () => {
-    setIsAvatarPlaying(true);
-    // Cycle through videos
-    setCurrentVideoIndex(prev => (prev + 1) % BOSS_AVATAR_VIDEOS.length);
-  };
-
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (status.isLoaded && status.didJustFinish) {
-      setIsAvatarPlaying(false);
-    }
-  };
-
-  const handleCheckpointResolve = async (
-    checkpointId: string,
-    status: 'APPROVED' | 'REJECTED'
-  ) => {
-    await resolveCheckpoint(checkpointId, status);
-  };
-
-  const generateAvatarVideo = async (text: string) => {
+  /**
+   * Generate D-ID avatar video for a Boss AI response
+   * The avatar is purely a PRESENTATION LAYER - it speaks Boss's words
+   */
+  const generateAvatarForMessage = async (messageId: string, text: string) => {
     try {
-      setIsGeneratingVideo(true);
+      setIsGeneratingAvatar(true);
+      
+      // Call Boss AI backend to generate D-ID video
       const response = await api.post('/avatar/generate', {
-        script_text: text.substring(0, 300),
-        voice_id: 'en-US-JennyNeural'
+        script_text: text.substring(0, 500), // D-ID limit
+        voice_id: 'en-US-GuyNeural' // Male voice for Boss
       });
       
       const videoId = response.data.video_id;
@@ -249,20 +174,51 @@ export default function BossScreen() {
         const statusResponse = await api.get(`/avatar/status/${videoId}`);
         
         if (statusResponse.data.status === 'completed') {
-          setGeneratedVideoUrl(statusResponse.data.result_video_url);
+          // Update message with avatar video URL
+          setMessages(prev => prev.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, avatarVideoUrl: statusResponse.data.result_video_url, avatarStatus: 'ready' }
+              : msg
+          ));
+          
+          // Auto-play the avatar video
+          setCurrentSpeakingVideo(statusResponse.data.result_video_url);
           setShowAvatarModal(true);
+          setIsAvatarSpeaking(true);
           break;
         } else if (statusResponse.data.status === 'failed') {
-          console.error('Video generation failed:', statusResponse.data.error_message);
+          setMessages(prev => prev.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, avatarStatus: 'failed' }
+              : msg
+          ));
           break;
         }
         
         attempts++;
       }
     } catch (error) {
-      console.error('Error generating avatar video:', error);
+      console.error('Avatar generation error:', error);
+      setMessages(prev => prev.map(msg => 
+        msg.id === messageId 
+          ? { ...msg, avatarStatus: 'failed' }
+          : msg
+      ));
     } finally {
-      setIsGeneratingVideo(false);
+      setIsGeneratingAvatar(false);
+    }
+  };
+
+  const handleCheckpointResolve = async (
+    checkpointId: string,
+    status: 'APPROVED' | 'REJECTED'
+  ) => {
+    await resolveCheckpoint(checkpointId, status);
+  };
+
+  const handleAvatarVideoEnd = (status: AVPlaybackStatus) => {
+    if (status.isLoaded && status.didJustFinish) {
+      setIsAvatarSpeaking(false);
     }
   };
 
@@ -277,7 +233,7 @@ export default function BossScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
-      {/* Header with Avatar */}
+      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color="#FFF" />
@@ -285,22 +241,17 @@ export default function BossScreen() {
         
         <TouchableOpacity 
           style={styles.headerCenter}
-          onPress={openDIDAgent}
+          onPress={() => setShowAvatarModal(true)}
         >
-          <View style={styles.avatarContainer}>
+          <View style={[styles.avatarContainer, isAvatarSpeaking && styles.avatarSpeaking]}>
             <Video
-              ref={videoRef}
               source={{ uri: BOSS_AVATAR_VIDEOS[currentVideoIndex] }}
               style={styles.avatarVideo}
               resizeMode={ResizeMode.COVER}
-              shouldPlay={isAvatarPlaying}
-              isLooping={false}
+              shouldPlay={true}
+              isLooping={true}
               isMuted={true}
-              onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
             />
-            {isAvatarPlaying && (
-              <View style={styles.avatarGlow} />
-            )}
           </View>
           <View>
             <Text style={styles.headerTitle}>Boss AI</Text>
@@ -308,14 +259,6 @@ export default function BossScreen() {
               <Text style={styles.projectBadge}>{currentProject.name}</Text>
             )}
           </View>
-        </TouchableOpacity>
-
-        {/* Talk to Avatar Button */}
-        <TouchableOpacity
-          onPress={openDIDAgent}
-          style={styles.talkButton}
-        >
-          <Ionicons name="mic" size={20} color="#6366F1" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -326,7 +269,7 @@ export default function BossScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Memory Receipt Bar */}
+      {/* Memory Receipt Bar - Single Source of Truth */}
       <TouchableOpacity
         style={styles.memoryBar}
         onPress={() => setShowMemoryReceipt(true)}
@@ -352,7 +295,7 @@ export default function BossScreen() {
           <View style={styles.emptyState}>
             <TouchableOpacity 
               style={styles.emptyAvatarContainer}
-              onPress={openDIDAgent}
+              onPress={() => setShowAvatarModal(true)}
             >
               <Video
                 source={{ uri: BOSS_AVATAR_VIDEOS[0] }}
@@ -362,15 +305,12 @@ export default function BossScreen() {
                 isLooping={true}
                 isMuted={true}
               />
-              <View style={styles.talkOverlay}>
-                <Ionicons name="mic" size={32} color="#FFF" />
-                <Text style={styles.talkOverlayText}>Tap to Talk</Text>
-              </View>
             </TouchableOpacity>
             <Text style={styles.emptyTitle}>Boss is ready</Text>
             <Text style={styles.emptySubtitle}>
-              Tap the avatar to talk with Boss, or type below.
               I'll proceed automatically and only pause at checkpoints.
+              {'\n\n'}
+              <Text style={styles.tipText}>Tip: Long-press send to hear Boss speak</Text>
             </Text>
           </View>
         )}
@@ -397,16 +337,25 @@ export default function BossScreen() {
                 {msg.modelUsed && (
                   <Text style={styles.modelBadge}>{msg.modelUsed}</Text>
                 )}
-                {/* Generate Video Button */}
+                {/* Play Avatar Button - Speaks Boss's response */}
                 <TouchableOpacity
-                  style={styles.videoButton}
-                  onPress={() => generateAvatarVideo(msg.content)}
-                  disabled={isGeneratingVideo}
+                  style={styles.speakButton}
+                  onPress={() => {
+                    if (msg.avatarVideoUrl) {
+                      setCurrentSpeakingVideo(msg.avatarVideoUrl);
+                      setShowAvatarModal(true);
+                    } else {
+                      generateAvatarForMessage(msg.id, msg.content);
+                    }
+                  }}
+                  disabled={msg.avatarStatus === 'generating'}
                 >
-                  {isGeneratingVideo ? (
+                  {msg.avatarStatus === 'generating' ? (
                     <ActivityIndicator size="small" color="#6366F1" />
+                  ) : msg.avatarVideoUrl ? (
+                    <Ionicons name="play-circle" size={18} color="#22C55E" />
                   ) : (
-                    <Ionicons name="videocam" size={14} color="#6366F1" />
+                    <Ionicons name="volume-high" size={16} color="#6366F1" />
                   )}
                 </TouchableOpacity>
               </View>
@@ -486,16 +435,17 @@ export default function BossScreen() {
             <Text style={styles.loadingText}>Boss is thinking...</Text>
           </View>
         )}
+
+        {isGeneratingAvatar && (
+          <View style={styles.generatingBubble}>
+            <ActivityIndicator size="small" color="#6366F1" />
+            <Text style={styles.generatingText}>Generating avatar response...</Text>
+          </View>
+        )}
       </ScrollView>
 
       {/* Input */}
       <View style={[styles.inputContainer, { paddingBottom: insets.bottom + 8 }]}>
-        <TouchableOpacity
-          style={styles.micButton}
-          onPress={openDIDAgent}
-        >
-          <Ionicons name="mic" size={22} color="#6366F1" />
-        </TouchableOpacity>
         <TextInput
           style={styles.input}
           value={inputText}
@@ -504,16 +454,17 @@ export default function BossScreen() {
           placeholderTextColor="#666"
           multiline
           maxLength={2000}
-          returnKeyType="send"
-          onSubmitEditing={handleSend}
         />
+        {/* Send Button - Tap for text, Long-press for avatar response */}
         <TouchableOpacity
           style={[
             styles.sendButton,
             (!inputText.trim() || isLoading) && styles.sendButtonDisabled,
           ]}
-          onPress={handleSend}
+          onPress={() => handleSend(false)}
+          onLongPress={() => handleSend(true)}
           disabled={!inputText.trim() || isLoading}
+          delayLongPress={500}
         >
           <Ionicons
             name="send"
@@ -523,96 +474,54 @@ export default function BossScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* D-ID Agent Modal (Full Screen Interactive Avatar) */}
-      <Modal
-        visible={showDIDAgent}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowDIDAgent(false)}
-      >
-        <View style={[styles.didAgentContainer, { paddingTop: insets.top }]}>
-          <View style={styles.didAgentHeader}>
-            <TouchableOpacity
-              style={styles.closeDidButton}
-              onPress={() => setShowDIDAgent(false)}
-            >
-              <Ionicons name="close" size={28} color="#FFF" />
-            </TouchableOpacity>
-            <Text style={styles.didAgentTitle}>Talk to Boss AI</Text>
-            <View style={{ width: 44 }} />
-          </View>
-          
-          {Platform.OS === 'web' ? (
-            <iframe
-              srcDoc={DID_AGENT_HTML}
-              style={{
-                flex: 1,
-                width: '100%',
-                height: '100%',
-                border: 'none',
-                backgroundColor: '#0A0A0F',
-              }}
-              allow="camera; microphone; autoplay"
-            />
-          ) : WebView ? (
-            <WebView
-              source={{ html: DID_AGENT_HTML }}
-              style={styles.didWebView}
-              allowsInlineMediaPlayback={true}
-              mediaPlaybackRequiresUserAction={false}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
-              startInLoadingState={true}
-              renderLoading={() => (
-                <View style={styles.webViewLoading}>
-                  <ActivityIndicator size="large" color="#6366F1" />
-                  <Text style={styles.webViewLoadingText}>Loading Boss AI...</Text>
-                </View>
-              )}
-            />
-          ) : (
-            <View style={styles.webViewLoading}>
-              <ActivityIndicator size="large" color="#6366F1" />
-              <Text style={styles.webViewLoadingText}>Loading Boss AI...</Text>
-            </View>
-          )}
-        </View>
-      </Modal>
-
-      {/* Avatar Video Modal */}
+      {/* Avatar Video Modal - D-ID speaks Boss's response */}
       <Modal
         visible={showAvatarModal}
         animationType="fade"
         transparent
-        onRequestClose={() => setShowAvatarModal(false)}
+        onRequestClose={() => {
+          setShowAvatarModal(false);
+          setIsAvatarSpeaking(false);
+        }}
       >
         <View style={styles.avatarModalOverlay}>
           <View style={styles.avatarModalContent}>
             <TouchableOpacity
               style={styles.closeAvatarButton}
-              onPress={() => setShowAvatarModal(false)}
+              onPress={() => {
+                setShowAvatarModal(false);
+                setIsAvatarSpeaking(false);
+              }}
             >
               <Ionicons name="close" size={28} color="#FFF" />
             </TouchableOpacity>
             
             <Video
-              source={{ uri: generatedVideoUrl || BOSS_AVATAR_VIDEOS[currentVideoIndex] }}
+              source={{ uri: currentSpeakingVideo || BOSS_AVATAR_VIDEOS[currentVideoIndex] }}
               style={styles.fullAvatarVideo}
               resizeMode={ResizeMode.CONTAIN}
               shouldPlay={true}
-              isLooping={!generatedVideoUrl}
-              useNativeControls={!!generatedVideoUrl}
+              isLooping={!currentSpeakingVideo}
+              useNativeControls={!!currentSpeakingVideo}
+              onPlaybackStatusUpdate={handleAvatarVideoEnd}
             />
             
             <Text style={styles.avatarModalTitle}>Boss AI</Text>
             <Text style={styles.avatarModalSubtitle}>
-              {generatedVideoUrl ? 'Generated Response' : 'Operating Layer'}
+              {currentSpeakingVideo ? 'Speaking Response' : 'Operating Layer'}
             </Text>
+            
+            {!currentSpeakingVideo && (
+              <Text style={styles.avatarHint}>
+                The avatar speaks what Boss decides.{'\n'}
+                Boss does not live inside the avatar.
+              </Text>
+            )}
           </View>
         </View>
       </Modal>
 
-      {/* Memory Receipt Modal */}
+      {/* Memory Receipt Modal - Single Source of Truth */}
       <Modal
         visible={showMemoryReceipt}
         animationType="slide"
@@ -627,6 +536,10 @@ export default function BossScreen() {
                 <Ionicons name="close" size={24} color="#888" />
               </TouchableOpacity>
             </View>
+            
+            <Text style={styles.architectureNote}>
+              Single source of truth: All memory managed by Boss AI Core
+            </Text>
 
             <ScrollView style={styles.modalScroll}>
               {memoryReceipt.map((receipt, index) => (
@@ -682,17 +595,6 @@ export default function BossScreen() {
               style={styles.menuItem}
               onPress={() => {
                 setShowSettings(false);
-                openDIDAgent();
-              }}
-            >
-              <Ionicons name="mic" size={20} color="#6366F1" />
-              <Text style={styles.menuText}>Talk to Boss</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowSettings(false);
                 router.push('/memory');
               }}
             >
@@ -712,6 +614,17 @@ export default function BossScreen() {
             </TouchableOpacity>
             
             <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setShowSettings(false);
+                router.push('/decisions');
+              }}
+            >
+              <Ionicons name="checkmark-done" size={20} color="#F59E0B" />
+              <Text style={styles.menuText}>Decisions</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
               style={[styles.menuItem, styles.logoutItem]}
               onPress={() => {
                 setShowSettings(false);
@@ -728,7 +641,7 @@ export default function BossScreen() {
   );
 }
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
   container: {
@@ -762,19 +675,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#6366F1',
   },
+  avatarSpeaking: {
+    borderColor: '#22C55E',
+    borderWidth: 3,
+  },
   avatarVideo: {
     width: '100%',
     height: '100%',
-  },
-  avatarGlow: {
-    position: 'absolute',
-    top: -4,
-    left: -4,
-    right: -4,
-    bottom: -4,
-    borderRadius: 28,
-    borderWidth: 2,
-    borderColor: '#F59E0B',
   },
   headerTitle: {
     color: '#FFF',
@@ -785,12 +692,6 @@ const styles = StyleSheet.create({
     color: '#6366F1',
     fontSize: 12,
     marginTop: 2,
-  },
-  talkButton: {
-    padding: 10,
-    backgroundColor: '#1A1A2E',
-    borderRadius: 20,
-    marginRight: 8,
   },
   settingsButton: {
     padding: 8,
@@ -845,27 +746,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A2E',
     borderWidth: 3,
     borderColor: '#6366F1',
-    position: 'relative',
   },
   emptyAvatarVideo: {
     width: '100%',
     height: '100%',
-  },
-  talkOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(99, 102, 241, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  talkOverlayText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
   },
   emptyTitle: {
     color: '#FFF',
@@ -880,6 +764,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingHorizontal: 40,
     lineHeight: 20,
+  },
+  tipText: {
+    color: '#6366F1',
+    fontSize: 12,
   },
   messageBubble: {
     maxWidth: '85%',
@@ -923,9 +811,11 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     flex: 1,
   },
-  videoButton: {
-    padding: 4,
+  speakButton: {
+    padding: 6,
     marginLeft: 8,
+    backgroundColor: '#0A0A0F',
+    borderRadius: 12,
   },
   messageText: {
     fontSize: 15,
@@ -1030,6 +920,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginLeft: 10,
   },
+  generatingBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1A1A2E',
+    borderRadius: 16,
+    padding: 14,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+  generatingText: {
+    color: '#6366F1',
+    fontSize: 13,
+    marginLeft: 10,
+  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -1038,15 +942,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#1A1A2E',
     backgroundColor: '#0A0A0F',
-  },
-  micButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#1A1A2E',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
   },
   input: {
     flex: 1,
@@ -1069,47 +964,6 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#1A1A2E',
-  },
-  // D-ID Agent Styles
-  didAgentContainer: {
-    flex: 1,
-    backgroundColor: '#0A0A0F',
-  },
-  didAgentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1A1A2E',
-  },
-  closeDidButton: {
-    padding: 8,
-  },
-  didAgentTitle: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  didWebView: {
-    flex: 1,
-    backgroundColor: '#0A0A0F',
-  },
-  webViewLoading: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#0A0A0F',
-  },
-  webViewLoadingText: {
-    color: '#888',
-    fontSize: 14,
-    marginTop: 16,
   },
   avatarModalOverlay: {
     flex: 1,
@@ -1146,6 +1000,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 4,
   },
+  avatarHint: {
+    color: '#555',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 16,
+    fontStyle: 'italic',
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -1169,6 +1030,13 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 18,
     fontWeight: '600',
+  },
+  architectureNote: {
+    color: '#6366F1',
+    fontSize: 11,
+    textAlign: 'center',
+    paddingVertical: 8,
+    backgroundColor: '#6366F110',
   },
   modalScroll: {
     padding: 20,
