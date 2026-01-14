@@ -1,11 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Image,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Alert,
 } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { useAuth } from '../src/context/AuthContext';
@@ -13,20 +17,79 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-// Boss AI Avatar Video URL
-const BOSS_AVATAR_VIDEO = 'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/qfwcfoxo_generated_video.mp4';
+// Boss AI Avatar Video URL - the stylized listening state
+const BOSS_AVATAR_VIDEO = 'https://customer-assets.emergentagent.com/job_2aa2b813-f5fe-4ade-a9d9-bc418df86344/artifacts/ymhkyqfe_generated_video_hd.mp4';
 
 export default function Index() {
-  const { isAuthenticated, isLoading, login, user } = useAuth();
+  const { isAuthenticated, isLoading, login, register, user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  
+  // Form state
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const handleSubmit = async () => {
+    setErrorMessage('');
+    
+    // Validation
+    if (!email.trim()) {
+      setErrorMessage('Please enter your email');
+      return;
+    }
+    if (!password.trim()) {
+      setErrorMessage('Please enter your password');
+      return;
+    }
+    if (!isLoginMode && !name.trim()) {
+      setErrorMessage('Please enter your name');
+      return;
+    }
+    if (!isLoginMode && password.length < 4) {
+      setErrorMessage('Password must be at least 4 characters');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    try {
+      if (isLoginMode) {
+        const result = await login(email, password, rememberMe);
+        if (!result.success) {
+          setErrorMessage(result.error || 'Login failed');
+        }
+      } else {
+        const result = await register(email, password, name);
+        if (!result.success) {
+          setErrorMessage(result.error || 'Registration failed');
+        }
+      }
+    } catch (error: any) {
+      setErrorMessage('An unexpected error occurred');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (isLoading) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.loadingContainer}>
-          <View style={styles.bossAvatar}>
-            <Ionicons name="hardware-chip" size={60} color="#6366F1" />
+          <View style={styles.bossAvatarLoading}>
+            <Video
+              source={{ uri: BOSS_AVATAR_VIDEO }}
+              style={styles.avatarVideoSmall}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={true}
+              isLooping={true}
+              isMuted={true}
+            />
           </View>
           <ActivityIndicator size="large" color="#6366F1" style={styles.loader} />
           <Text style={styles.loadingText}>Initializing Boss AI...</Text>
@@ -39,8 +102,15 @@ export default function Index() {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <View style={styles.bossAvatar}>
-            <Ionicons name="hardware-chip" size={40} color="#6366F1" />
+          <View style={styles.bossAvatarLarge}>
+            <Video
+              source={{ uri: BOSS_AVATAR_VIDEO }}
+              style={styles.avatarVideo}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={true}
+              isLooping={true}
+              isMuted={true}
+            />
           </View>
           <Text style={styles.welcomeText}>Welcome back,</Text>
           <Text style={styles.userName}>{user?.name}</Text>
@@ -104,54 +174,176 @@ export default function Index() {
     );
   }
 
-  // Login screen
+  // Login/Register screen
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.heroSection}>
-        <View style={styles.bossAvatarLarge}>
-          <Video
-            source={{ uri: BOSS_AVATAR_VIDEO }}
-            style={styles.avatarVideo}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={true}
-            isLooping={true}
-            isMuted={true}
-          />
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView 
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20 }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Hero Section */}
+        <View style={styles.heroSection}>
+          <View style={styles.bossAvatarHero}>
+            <Video
+              source={{ uri: BOSS_AVATAR_VIDEO }}
+              style={styles.avatarVideo}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={true}
+              isLooping={true}
+              isMuted={true}
+            />
+          </View>
+          
+          <Text style={styles.title}>Boss AI</Text>
+          <Text style={styles.subtitle}>Operating Layer</Text>
+          
+          <View style={styles.featureList}>
+            <View style={styles.featureItem}>
+              <Ionicons name="flash" size={18} color="#6366F1" />
+              <Text style={styles.featureText}>Autopilot by default</Text>
+            </View>
+            <View style={styles.featureItem}>
+              <Ionicons name="server" size={18} color="#A855F7" />
+              <Text style={styles.featureText}>Structured memory</Text>
+            </View>
+            <View style={styles.featureItem}>
+              <Ionicons name="shield-checkmark" size={18} color="#22C55E" />
+              <Text style={styles.featureText}>Checkpoints for safety</Text>
+            </View>
+          </View>
         </View>
-        
-        <Text style={styles.title}>Boss AI</Text>
-        <Text style={styles.subtitle}>Operating Layer</Text>
-        
-        <View style={styles.featureList}>
-          <View style={styles.featureItem}>
-            <Ionicons name="flash" size={20} color="#6366F1" />
-            <Text style={styles.featureText}>Autopilot by default</Text>
-          </View>
-          <View style={styles.featureItem}>
-            <Ionicons name="server" size={20} color="#A855F7" />
-            <Text style={styles.featureText}>Structured memory</Text>
-          </View>
-          <View style={styles.featureItem}>
-            <Ionicons name="shield-checkmark" size={20} color="#22C55E" />
-            <Text style={styles.featureText}>Checkpoints for safety</Text>
-          </View>
-        </View>
-      </View>
 
-      <View style={styles.loginSection}>
-        <TouchableOpacity style={styles.loginButton} onPress={login}>
-          <Image
-            source={{ uri: 'https://www.google.com/favicon.ico' }}
-            style={styles.googleIcon}
-          />
-          <Text style={styles.loginButtonText}>Continue with Google</Text>
-        </TouchableOpacity>
-        
-        <Text style={styles.disclaimer}>
-          Boss remembers decisions, not conversations
-        </Text>
-      </View>
-    </View>
+        {/* Auth Form */}
+        <View style={styles.authSection}>
+          {/* Toggle */}
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity
+              style={[styles.toggleButton, isLoginMode && styles.toggleButtonActive]}
+              onPress={() => {
+                setIsLoginMode(true);
+                setErrorMessage('');
+              }}
+            >
+              <Text style={[styles.toggleText, isLoginMode && styles.toggleTextActive]}>
+                Login
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleButton, !isLoginMode && styles.toggleButtonActive]}
+              onPress={() => {
+                setIsLoginMode(false);
+                setErrorMessage('');
+              }}
+            >
+              <Text style={[styles.toggleText, !isLoginMode && styles.toggleTextActive]}>
+                Register
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Error Message */}
+          {errorMessage ? (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle" size={18} color="#EF4444" />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
+          {/* Name Field (Register only) */}
+          {!isLoginMode && (
+            <View style={styles.inputContainer}>
+              <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Your name"
+                placeholderTextColor="#666"
+                value={name}
+                onChangeText={setName}
+                autoCapitalize="words"
+                autoCorrect={false}
+              />
+            </View>
+          )}
+
+          {/* Email Field */}
+          <View style={styles.inputContainer}>
+            <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#666"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+
+          {/* Password Field */}
+          <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#666"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity 
+              onPress={() => setShowPassword(!showPassword)}
+              style={styles.eyeButton}
+            >
+              <Ionicons 
+                name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                size={20} 
+                color="#666" 
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Remember Me (Login only) */}
+          {isLoginMode && (
+            <TouchableOpacity 
+              style={styles.rememberMeContainer}
+              onPress={() => setRememberMe(!rememberMe)}
+            >
+              <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                {rememberMe && <Ionicons name="checkmark" size={14} color="#FFF" />}
+              </View>
+              <Text style={styles.rememberMeText}>Stay logged in</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Submit Button */}
+          <TouchableOpacity
+            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <>
+                <Text style={styles.submitButtonText}>
+                  {isLoginMode ? 'Login' : 'Create Account'}
+                </Text>
+                <Ionicons name="arrow-forward" size={20} color="#FFF" />
+              </>
+            )}
+          </TouchableOpacity>
+
+          <Text style={styles.disclaimer}>
+            Boss remembers decisions, not conversations
+          </Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -160,10 +352,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0A0A0F',
   },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  bossAvatarLoading: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    overflow: 'hidden',
+    backgroundColor: '#1A1A2E',
+    borderWidth: 2,
+    borderColor: '#6366F1',
   },
   loader: {
     marginTop: 24,
@@ -178,30 +383,20 @@ const styles = StyleSheet.create({
     paddingVertical: 32,
     paddingHorizontal: 24,
   },
-  bossAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#1A1A2E',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#6366F1',
-  },
   bossAvatarLarge: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: '#1A1A2E',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     overflow: 'hidden',
+    backgroundColor: '#1A1A2E',
     borderWidth: 3,
     borderColor: '#6366F1',
-    marginBottom: 24,
-    position: 'relative',
   },
   avatarVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarVideoSmall: {
     width: '100%',
     height: '100%',
   },
@@ -274,55 +469,146 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   heroSection: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 32,
+  },
+  bossAvatarHero: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    overflow: 'hidden',
+    backgroundColor: '#1A1A2E',
+    borderWidth: 3,
+    borderColor: '#6366F1',
+    marginBottom: 20,
   },
   title: {
     color: '#FFF',
-    fontSize: 42,
+    fontSize: 36,
     fontWeight: '800',
     letterSpacing: -1,
   },
   subtitle: {
     color: '#6366F1',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '500',
     marginTop: 4,
   },
   featureList: {
-    marginTop: 40,
+    marginTop: 24,
   },
   featureItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   featureText: {
     color: '#AAA',
-    fontSize: 16,
-    marginLeft: 12,
+    fontSize: 14,
+    marginLeft: 10,
   },
-  loginSection: {
-    paddingHorizontal: 24,
-    paddingBottom: 60,
+  authSection: {
+    paddingBottom: 40,
   },
-  loginButton: {
+  toggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#12121A',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 24,
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  toggleButtonActive: {
+    backgroundColor: '#6366F1',
+  },
+  toggleText: {
+    color: '#666',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  toggleTextActive: {
+    color: '#FFF',
+  },
+  errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: '#EF444420',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 14,
+    marginLeft: 8,
+    flex: 1,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#12121A',
     borderRadius: 12,
-    padding: 16,
+    borderWidth: 1,
+    borderColor: '#222',
+    marginBottom: 12,
+    paddingHorizontal: 14,
   },
-  googleIcon: {
-    width: 24,
-    height: 24,
-    marginRight: 12,
+  inputIcon: {
+    marginRight: 10,
   },
-  loginButtonText: {
-    color: '#333',
+  input: {
+    flex: 1,
+    color: '#FFF',
+    fontSize: 16,
+    paddingVertical: 14,
+  },
+  eyeButton: {
+    padding: 8,
+  },
+  rememberMeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    marginTop: 4,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  checkboxChecked: {
+    backgroundColor: '#6366F1',
+    borderColor: '#6366F1',
+  },
+  rememberMeText: {
+    color: '#AAA',
+    fontSize: 14,
+  },
+  submitButton: {
+    flexDirection: 'row',
+    backgroundColor: '#6366F1',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  submitButtonDisabled: {
+    opacity: 0.7,
+  },
+  submitButtonText: {
+    color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -330,6 +616,6 @@ const styles = StyleSheet.create({
     color: '#555',
     fontSize: 13,
     textAlign: 'center',
-    marginTop: 16,
+    marginTop: 20,
   },
 });
