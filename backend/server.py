@@ -292,72 +292,56 @@ async def get_optional_user(request: Request) -> Optional[User]:
 
 # ================== AUTH ROUTES ==================
 
-@api_router.post("/auth/session")
-async def create_session(request: Request, response: Response):
-    """Exchange session_id for session_token"""
-    data = await request.json()
-    session_id = data.get("session_id")
+# Email/Password Register
+@api_router.post("/auth/register")
+async def register(user_data: UserRegister, response: Response):
+    """Register a new user with email and password"""
+    # Check if email already exists
+    existing_user = await db.users.find_one({"email": user_data.email.lower()})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
     
-    if not session_id:
-        raise HTTPException(status_code=400, detail="session_id required")
-    
-    # Exchange session_id with Emergent Auth
-    async with httpx.AsyncClient() as client:
-        auth_response = await client.get(
-            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-            headers={"X-Session-ID": session_id}
-        )
-        
-        if auth_response.status_code != 200:
-            raise HTTPException(status_code=401, detail="Invalid session_id")
-        
-        user_data = auth_response.json()
-    
-    session_data = SessionDataResponse(**user_data)
+    # Create user
     user_id = f"user_{uuid.uuid4().hex[:12]}"
+    hashed_password = get_password_hash(user_data.password)
     
-    # Check if user exists
-    existing_user = await db.users.find_one(
-        {"email": session_data.email},
-        {"_id": 0}
+    new_user = {
+        "user_id": user_id,
+        "email": user_data.email.lower(),
+        "name": user_data.name,
+        "hashed_password": hashed_password,
+        "picture": None,
+        "created_at": datetime.now(timezone.utc),
+        "auth_provider": "email"
+    }
+    await db.users.insert_one(new_user)
+    
+    # Initialize L0 Prime Memory for new user
+    await _create_memory_event(
+        user_id=user_id,
+        event_type="MEMORY_SET",
+        scope="L0_PRIME",
+        key="user_preferences",
+        value={"autopilot": True, "notification_level": "checkpoints_only"},
+        metadata={"source": "system_init"}
     )
     
-    if existing_user:
-        user_id = existing_user["user_id"]
-    else:
-        # Create new user
-        new_user = {
-            "user_id": user_id,
-            "email": session_data.email,
-            "name": session_data.name,
-            "picture": session_data.picture,
-            "created_at": datetime.now(timezone.utc)
-        }
-        await db.users.insert_one(new_user)
-        
-        # Initialize L0 Prime Memory for new user
-        await _create_memory_event(
-            user_id=user_id,
-            event_type="MEMORY_SET",
-            scope="L0_PRIME",
-            key="user_preferences",
-            value={"autopilot": True, "notification_level": "checkpoints_only"},
-            metadata={"source": "system_init"}
-        )
-    
-    # Create session
+    # Create session (auto-login after register)
+    session_token = generate_session_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    
     await db.user_sessions.insert_one({
         "user_id": user_id,
-        "session_token": session_data.session_token,
+        "session_token": session_token,
         "expires_at": expires_at,
-        "created_at": datetime.now(timezone.utc)
+        "created_at": datetime.now(timezone.utc),
+        "remember_me": False
     })
     
     # Set cookie
     response.set_cookie(
         key="session_token",
-        value=session_data.session_token,
+        value=session_token,
         httponly=True,
         secure=True,
         samesite="none",
@@ -365,8 +349,68 @@ async def create_session(request: Request, response: Response):
         max_age=7 * 24 * 60 * 60
     )
     
-    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-    return {"user": user, "session_token": session_data.session_token}
+    # Return user without password
+    user_response = {k: v for k, v in new_user.items() if k != "hashed_password" and k != "_id"}
+    return {"user": user_response, "session_token": session_token, "message": "Registration successful"}
+
+# Email/Password Login
+@api_router.post("/auth/login")
+async def login(user_data: UserLogin, response: Response):
+    """Login with email and password"""
+    # Find user
+    user = await db.users.find_one({"email": user_data.email.lower()})
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Check password
+    if not user.get("hashed_password"):
+        raise HTTPException(status_code=401, detail="Please use Google login for this account")
+    
+    if not verify_password(user_data.password, user["hashed_password"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Create session
+    session_token = generate_session_token()
+    
+    # If "remember me" is checked, session lasts 30 days, otherwise 7 days
+    if user_data.remember_me:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+        max_age = 30 * 24 * 60 * 60
+    else:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+        max_age = 7 * 24 * 60 * 60
+    
+    await db.user_sessions.insert_one({
+        "user_id": user["user_id"],
+        "session_token": session_token,
+        "expires_at": expires_at,
+        "created_at": datetime.now(timezone.utc),
+        "remember_me": user_data.remember_me
+    })
+    
+    # Set cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        path="/",
+        max_age=max_age
+    )
+    
+    # Return user without password
+    user_response = {k: v for k, v in user.items() if k != "hashed_password" and k != "_id"}
+    return {"user": user_response, "session_token": session_token, "message": "Login successful"}
+
+# Legacy Google OAuth session exchange (kept for backwards compatibility but disabled)
+@api_router.post("/auth/session")
+async def create_session(request: Request, response: Response):
+    """Exchange session_id for session_token - DEPRECATED: Use /auth/login instead"""
+    raise HTTPException(
+        status_code=410, 
+        detail="Google OAuth login is temporarily disabled. Please use email/password login at /auth/login or register at /auth/register"
+    )
 
 @api_router.get("/auth/me")
 async def get_me(current_user: User = Depends(get_current_user)):
