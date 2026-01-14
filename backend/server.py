@@ -82,14 +82,28 @@ class User(BaseModel):
     user_id: str
     email: str
     name: str
+    hashed_password: Optional[str] = None  # For email/password auth
     picture: Optional[str] = None
     created_at: datetime
+    auth_provider: str = "email"  # "email" or "google"
 
 class UserSession(BaseModel):
     user_id: str
     session_token: str
     expires_at: datetime
     created_at: datetime
+    remember_me: bool = False  # For "stay logged in" feature
+
+# Email/Password Auth Models
+class UserRegister(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=4)  # Simple password requirement
+    name: str = Field(min_length=1)
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+    remember_me: bool = False  # Stay logged in option
 
 class SessionDataResponse(BaseModel):
     id: str
