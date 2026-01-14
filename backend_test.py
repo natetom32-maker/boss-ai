@@ -11,7 +11,7 @@ from datetime import datetime
 import uuid
 
 # Test configuration
-BASE_URL = "https://boss-ai-1.preview.emergentagent.com/api"
+BASE_URL = "https://memory-boss.preview.emergentagent.com/api"
 SESSION_TOKEN = "test_session_1768187604791"
 USER_ID = "user_1768187604791"
 
