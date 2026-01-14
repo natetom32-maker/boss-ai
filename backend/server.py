@@ -415,7 +415,15 @@ async def create_session(request: Request, response: Response):
 @api_router.get("/auth/me")
 async def get_me(current_user: User = Depends(get_current_user)):
     """Get current user info"""
-    return current_user
+    # Return user without sensitive data
+    return {
+        "user_id": current_user.user_id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "picture": current_user.picture,
+        "created_at": current_user.created_at,
+        "auth_provider": getattr(current_user, 'auth_provider', 'email')
+    }
 
 @api_router.post("/auth/logout")
 async def logout(request: Request, response: Response):
