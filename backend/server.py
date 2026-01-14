@@ -30,6 +30,18 @@ EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 DID_API_KEY = os.environ.get('DID_API_KEY', '')
 DID_API_BASE = 'https://api.d-id.com'
 
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+def generate_session_token() -> str:
+    return str(uuid.uuid4()) + "-" + str(uuid.uuid4())
+
 # Create the main app
 app = FastAPI(title="Boss AI - Operating Layer")
 
