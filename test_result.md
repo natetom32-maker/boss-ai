@@ -314,6 +314,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: Boss AI message endpoint working correctly. Handles simple messages with model auto-selection, properly triggers checkpoints for 'delete' actions, returns structured responses"
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-TESTED: Boss AI endpoint working perfectly with new auth system. Auto-selects models (GPT-5.2), triggers checkpoints for delete actions, includes memory context, requires Bearer token authentication"
 
   - task: "Boss AI - Memory Receipt"
     implemented: true
@@ -329,6 +332,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: Memory receipt endpoint working correctly. Returns structured memory usage information by scope"
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-TESTED: Memory receipt endpoint working correctly with new auth system. Returns memory usage by scope, requires authentication"
 
 frontend:
   - task: "Root Layout with Auth Provider"
