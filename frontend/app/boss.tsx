@@ -58,8 +58,8 @@ interface Message {
 // Boss AI Avatar - IDLE state (static image or looping video)
 const BOSS_AVATAR_IDLE = 'https://customer-assets.emergentagent.com/job_2aa2b813-f5fe-4ade-a9d9-bc418df86344/artifacts/ymhkyqfe_generated_video_hd.mp4';
 
-// Fallback avatar image for static display
-const BOSS_AVATAR_IMAGE = 'https://create-images-results.d-id.com/DefaultPresenters/Noelle_f/thumbnail.jpeg';
+// Boss AI Avatar - User's image (Nate) for display
+const BOSS_AVATAR_IMAGE = 'https://customer-assets.emergentagent.com/job_2aa2b813-f5fe-4ade-a9d9-bc418df86344/artifacts/maffvqbd_nate%20without%20background.png';
 
 export default function BossScreen() {
   const insets = useSafeAreaInsets();
