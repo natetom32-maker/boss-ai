@@ -185,6 +185,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: /api/auth/me endpoint working correctly with Bearer token authentication. Returns correct user data"
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-TESTED: Endpoint working correctly with new email/password auth system. Validates Bearer tokens, returns user info, properly rejects unauthenticated requests (401)"
 
   - task: "Auth - Logout"
     implemented: true
@@ -200,6 +203,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: Logout endpoint implemented and accessible (not directly tested to avoid invalidating test session)"
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-TESTED: Logout endpoint working correctly. Invalidates session tokens, clears cookies, returns success message"
 
   - task: "Memory Engine - Event Sourcing"
     implemented: true
@@ -215,6 +221,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: All memory engine endpoints working correctly. POST /api/memory/events creates events, GET /api/memory/events retrieves event log, GET /api/memory/state returns derived state"
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-TESTED: All memory endpoints working with new auth system. Event creation, retrieval, and state management all functional with Bearer token authentication"
 
   - task: "Memory Engine - State Rebuild"
     implemented: true
