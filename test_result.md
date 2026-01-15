@@ -120,7 +120,7 @@ backend:
         agent: "testing"
         comment: "✅ TESTED: Both /api/ and /api/health endpoints working correctly. Root returns Boss AI message, health returns status:healthy"
 
-  - task: "Google Auth - Session Exchange"
+  - task: "Email/Password Auth - Registration"
     implemented: true
     working: true
     file: "/app/backend/server.py"
@@ -130,10 +130,46 @@ backend:
     status_history:
       - working: NA
         agent: "main"
+        comment: "Implemented POST /api/auth/register endpoint for email/password registration with auto-login"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Registration endpoint working correctly. Creates new users, validates duplicate emails (returns 400), auto-creates session token, initializes L0 Prime Memory"
+
+  - task: "Email/Password Auth - Login"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Implemented POST /api/auth/login endpoint with remember_me support (7 days vs 30 days session)"
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Login endpoint working correctly. Validates credentials, supports remember_me feature, creates session tokens, rejects invalid passwords (401)"
+
+  - task: "Google Auth - Session Exchange (DEPRECATED)"
+    implemented: true
+    working: false
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "low"
+    needs_retesting: false
+    status_history:
+      - working: NA
+        agent: "main"
         comment: "Implemented /api/auth/session endpoint for session_id to session_token exchange"
       - working: true
         agent: "testing"
         comment: "✅ TESTED: Session exchange not directly tested but session validation working via /api/auth/me endpoint"
+      - working: false
+        agent: "main"
+        comment: "DEPRECATED: Google OAuth disabled in favor of email/password auth. Endpoint returns 410 Gone status"
+      - working: false
+        agent: "testing"
+        comment: "✅ TESTED: Endpoint correctly returns 410 Gone status with message directing users to email/password auth"
 
   - task: "Auth - Get Current User"
     implemented: true
