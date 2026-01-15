@@ -11,26 +11,32 @@ import {
   ActivityIndicator,
   Modal,
   Dimensions,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { useBossStore } from '../src/store/bossStore';
 import { useAuth } from '../src/context/AuthContext';
+import api from '../src/services/api';
 
 /**
  * UNIFIED BOSS AI ARCHITECTURE
  * 
  * Boss AI Core (memory + autopilot + checkpoints)
  *        ↑
- *   API boundary (/api/boss/message, /api/memory, etc.)
+ *   API boundary (/api/boss/message, /api/avatar/generate)
  *        ↑
- * UI / Avatar (presentation layer only)
+ * UI / D-ID Avatar (presentation layer only)
  * 
  * The avatar speaks what Boss decides.
  * Boss does not live inside the avatar.
+ * 
+ * Avatar States:
+ * 1. IDLE: Static image - Boss is listening/thinking
+ * 2. SPEAKING: D-ID video - Boss is speaking exact response text
  */
 
 interface Message {
@@ -45,19 +51,22 @@ interface Message {
     type: string;
     reason: string;
   };
+  videoUrl?: string;
+  videoStatus?: 'generating' | 'ready' | 'failed';
 }
 
-// Boss AI Avatar Video - the stylized listening state (user provided)
-const BOSS_AVATAR_VIDEO = 'https://customer-assets.emergentagent.com/job_2aa2b813-f5fe-4ade-a9d9-bc418df86344/artifacts/ymhkyqfe_generated_video_hd.mp4';
+// Boss AI Avatar - IDLE state (static image or looping video)
+const BOSS_AVATAR_IDLE = 'https://customer-assets.emergentagent.com/job_2aa2b813-f5fe-4ade-a9d9-bc418df86344/artifacts/ymhkyqfe_generated_video_hd.mp4';
 
-// Offline/idle placeholder - last frame representation
-const BOSS_AVATAR_IDLE = 'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/qfwcfoxo_generated_video.mp4';
+// Fallback avatar image for static display
+const BOSS_AVATAR_IMAGE = 'https://create-images-results.d-id.com/DefaultPresenters/Noelle_f/thumbnail.jpeg';
 
 export default function BossScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
   const videoRef = useRef<Video>(null);
+  const speakingVideoRef = useRef<Video>(null);
   const { user, logout } = useAuth();
   
   const {
@@ -73,56 +82,139 @@ export default function BossScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [showMemoryReceipt, setShowMemoryReceipt] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [isAvatarSpeaking, setIsAvatarSpeaking] = useState(false);
-  const [isAvatarActive, setIsAvatarActive] = useState(true);
-  const [showAvatarModal, setShowAvatarModal] = useState(false);
+  
+  // Avatar states
+  const [avatarState, setAvatarState] = useState<'idle' | 'thinking' | 'speaking'>('idle');
+  const [speakingVideoUrl, setSpeakingVideoUrl] = useState<string | null>(null);
   const [currentSpeakingText, setCurrentSpeakingText] = useState<string>('');
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
 
   useEffect(() => {
     fetchMemoryReceipt(currentProject?.project_id);
   }, [currentProject]);
 
   /**
-   * Speak text using native TTS
-   * The avatar video plays while Boss speaks
+   * Generate D-ID video for Boss AI response
+   * This is the ONLY way the avatar speaks - with exact text from Boss AI Core
    */
-  const speakText = async (text: string) => {
+  const generateAvatarVideo = async (text: string, messageId?: string): Promise<string | null> => {
     try {
-      // Stop any ongoing speech
-      await Speech.stop();
+      setIsGeneratingVideo(true);
+      setAvatarState('thinking');
       
-      setIsAvatarSpeaking(true);
-      setCurrentSpeakingText(text);
+      // Call backend to generate D-ID video with exact Boss AI response text
+      const response = await api.post('/avatar/generate', {
+        script_text: text.substring(0, 500), // D-ID limit
+        voice_id: 'en-US-GuyNeural' // Male voice for Boss
+      });
       
-      // Configure speech options
-      const options = {
-        language: 'en-US',
-        pitch: 0.9,
-        rate: 0.95,
-        onDone: () => {
-          setIsAvatarSpeaking(false);
-          setCurrentSpeakingText('');
-        },
-        onError: () => {
-          setIsAvatarSpeaking(false);
-          setCurrentSpeakingText('');
-        },
-      };
+      const videoId = response.data.video_id;
       
-      Speech.speak(text, options);
+      // Poll for completion
+      let attempts = 0;
+      const maxAttempts = 60;
+      
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const statusResponse = await api.get(`/avatar/status/${videoId}`);
+        
+        if (statusResponse.data.status === 'completed') {
+          const videoUrl = statusResponse.data.result_video_url;
+          
+          // Update message if messageId provided
+          if (messageId) {
+            setMessages(prev => prev.map(msg => 
+              msg.id === messageId 
+                ? { ...msg, videoUrl, videoStatus: 'ready' }
+                : msg
+            ));
+          }
+          
+          setIsGeneratingVideo(false);
+          return videoUrl;
+        } else if (statusResponse.data.status === 'failed') {
+          if (messageId) {
+            setMessages(prev => prev.map(msg => 
+              msg.id === messageId 
+                ? { ...msg, videoStatus: 'failed' }
+                : msg
+            ));
+          }
+          setIsGeneratingVideo(false);
+          return null;
+        }
+        
+        attempts++;
+      }
+      
+      setIsGeneratingVideo(false);
+      return null;
     } catch (error) {
-      console.error('Speech error:', error);
-      setIsAvatarSpeaking(false);
+      console.error('D-ID video generation error:', error);
+      setIsGeneratingVideo(false);
+      return null;
     }
   };
 
   /**
-   * Stop speaking
+   * Play the avatar speaking video
+   */
+  const playAvatarVideo = (videoUrl: string, text: string) => {
+    setSpeakingVideoUrl(videoUrl);
+    setCurrentSpeakingText(text);
+    setAvatarState('speaking');
+    setShowAvatarModal(true);
+  };
+
+  /**
+   * Fallback: Use browser TTS if D-ID fails
+   */
+  const speakWithTTS = async (text: string) => {
+    try {
+      await Speech.stop();
+      setAvatarState('speaking');
+      setCurrentSpeakingText(text);
+      
+      Speech.speak(text, {
+        language: 'en-US',
+        pitch: 0.9,
+        rate: 0.95,
+        onDone: () => {
+          setAvatarState('idle');
+          setCurrentSpeakingText('');
+        },
+        onError: () => {
+          setAvatarState('idle');
+          setCurrentSpeakingText('');
+        },
+      });
+    } catch (error) {
+      console.error('TTS error:', error);
+      setAvatarState('idle');
+    }
+  };
+
+  /**
+   * Stop any speaking
    */
   const stopSpeaking = async () => {
     await Speech.stop();
-    setIsAvatarSpeaking(false);
+    setSpeakingVideoUrl(null);
     setCurrentSpeakingText('');
+    setAvatarState('idle');
+  };
+
+  /**
+   * Handle video playback end
+   */
+  const handleVideoEnd = (status: AVPlaybackStatus) => {
+    if (status.isLoaded && status.didJustFinish) {
+      setAvatarState('idle');
+      setSpeakingVideoUrl(null);
+      setCurrentSpeakingText('');
+    }
   };
 
   /**
@@ -130,9 +222,10 @@ export default function BossScreen() {
    * 1. User input (text)
    * 2. Send to Boss AI Core (/api/boss/message)
    * 3. Boss AI processes with memory, autopilot, checkpoints
-   * 4. Boss AI returns response
-   * 5. Optionally speak the response via TTS
-   * 6. Display response
+   * 4. Boss AI returns response.response (exact text)
+   * 5. UI renders text immediately
+   * 6. If shouldSpeak: Generate D-ID video with exact response.response
+   * 7. Play video (avatar speaks Boss's words)
    */
   const handleSend = async (shouldSpeak: boolean = false) => {
     if (!inputText.trim() || isLoading) return;
@@ -147,7 +240,7 @@ export default function BossScreen() {
     setMessages(prev => [...prev, userMessage]);
     const messageText = inputText.trim();
     setInputText('');
-    setIsAvatarActive(true);
+    setAvatarState('thinking');
 
     try {
       // Send to Boss AI Core - the SINGLE source of truth
@@ -156,29 +249,37 @@ export default function BossScreen() {
         currentProject?.project_id
       );
 
-      // Create Boss response message
+      // Create Boss response message with exact text
       const bossMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'boss',
-        content: response.response,
+        content: response.response, // EXACT text from Boss AI
         timestamp: new Date(),
         memoryUsed: response.memory_used,
         modelUsed: response.model_used,
         checkpointRequired: response.checkpoint_required,
+        videoStatus: shouldSpeak ? 'generating' : undefined,
       };
 
       setMessages(prev => [...prev, bossMessage]);
+      setAvatarState('idle');
       fetchMemoryReceipt(currentProject?.project_id);
 
-      // If user wants Boss to speak (long-press send), use TTS
+      // If user wants Boss to speak, generate D-ID video with EXACT response text
       if (shouldSpeak && !response.checkpoint_required) {
-        // Small delay for natural feel
-        setTimeout(() => {
-          speakText(response.response);
-        }, 300);
+        const videoUrl = await generateAvatarVideo(response.response, bossMessage.id);
+        
+        if (videoUrl) {
+          // Play the D-ID video
+          playAvatarVideo(videoUrl, response.response);
+        } else {
+          // Fallback to TTS if D-ID fails
+          speakWithTTS(response.response);
+        }
       }
       
     } catch (error: any) {
+      setAvatarState('idle');
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'boss',
@@ -189,6 +290,24 @@ export default function BossScreen() {
     }
 
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+  };
+
+  /**
+   * Speak a specific message (tap speaker icon)
+   */
+  const speakMessage = async (message: Message) => {
+    if (message.videoUrl) {
+      // Already has video, just play it
+      playAvatarVideo(message.videoUrl, message.content);
+    } else {
+      // Generate new video
+      const videoUrl = await generateAvatarVideo(message.content, message.id);
+      if (videoUrl) {
+        playAvatarVideo(videoUrl, message.content);
+      } else {
+        speakWithTTS(message.content);
+      }
+    }
   };
 
   const handleCheckpointResolve = async (
@@ -202,6 +321,15 @@ export default function BossScreen() {
     (sum, r) => sum + r.items_count,
     0
   );
+
+  // Avatar border color based on state
+  const getAvatarBorderColor = () => {
+    switch (avatarState) {
+      case 'speaking': return '#22C55E';
+      case 'thinking': return '#F59E0B';
+      default: return '#6366F1';
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -221,33 +349,26 @@ export default function BossScreen() {
         >
           <View style={[
             styles.avatarContainer, 
-            isAvatarSpeaking && styles.avatarSpeaking,
-            !isAvatarActive && styles.avatarOffline
+            { borderColor: getAvatarBorderColor() },
+            avatarState === 'speaking' && styles.avatarSpeaking
           ]}>
             <Video
               ref={videoRef}
-              source={{ uri: BOSS_AVATAR_VIDEO }}
+              source={{ uri: BOSS_AVATAR_IDLE }}
               style={styles.avatarVideo}
               resizeMode={ResizeMode.COVER}
-              shouldPlay={isAvatarActive}
+              shouldPlay={avatarState !== 'idle'}
               isLooping={true}
               isMuted={true}
             />
-            {!isAvatarActive && (
-              <View style={styles.offlineOverlay}>
-                <Ionicons name="pause" size={16} color="#666" />
-              </View>
-            )}
           </View>
           <View>
             <Text style={styles.headerTitle}>Boss AI</Text>
-            {isAvatarSpeaking ? (
-              <Text style={styles.speakingBadge}>Speaking...</Text>
-            ) : currentProject ? (
-              <Text style={styles.projectBadge}>{currentProject.name}</Text>
-            ) : (
-              <Text style={styles.statusBadge}>Ready</Text>
-            )}
+            <Text style={[styles.statusBadge, { color: getAvatarBorderColor() }]}>
+              {avatarState === 'speaking' ? 'Speaking...' : 
+               avatarState === 'thinking' ? 'Thinking...' : 
+               currentProject ? currentProject.name : 'Ready'}
+            </Text>
           </View>
         </TouchableOpacity>
 
@@ -288,7 +409,7 @@ export default function BossScreen() {
               onPress={() => setShowAvatarModal(true)}
             >
               <Video
-                source={{ uri: BOSS_AVATAR_VIDEO }}
+                source={{ uri: BOSS_AVATAR_IDLE }}
                 style={styles.emptyAvatarVideo}
                 resizeMode={ResizeMode.COVER}
                 shouldPlay={true}
@@ -300,7 +421,7 @@ export default function BossScreen() {
             <Text style={styles.emptySubtitle}>
               I'll proceed automatically and only pause at checkpoints.
               {'\n\n'}
-              <Text style={styles.tipText}>💡 Tap send for text • Long-press to hear Boss speak</Text>
+              <Text style={styles.tipText}>💡 Tap send = text • Long-press = Boss speaks</Text>
             </Text>
           </View>
         )}
@@ -316,30 +437,24 @@ export default function BossScreen() {
             {msg.type === 'boss' && (
               <View style={styles.bossHeader}>
                 <View style={styles.bossAvatarSmall}>
-                  <Video
-                    source={{ uri: BOSS_AVATAR_VIDEO }}
-                    style={styles.bossAvatarSmallVideo}
-                    resizeMode={ResizeMode.COVER}
-                    shouldPlay={false}
-                    isMuted={true}
+                  <Image
+                    source={{ uri: BOSS_AVATAR_IMAGE }}
+                    style={styles.bossAvatarSmallImage}
                   />
                 </View>
                 {msg.modelUsed && (
                   <Text style={styles.modelBadge}>{msg.modelUsed}</Text>
                 )}
-                {/* Speak Button */}
+                {/* Speak Button - generates D-ID video with exact message content */}
                 <TouchableOpacity
                   style={styles.speakButton}
-                  onPress={() => {
-                    if (isAvatarSpeaking && currentSpeakingText === msg.content) {
-                      stopSpeaking();
-                    } else {
-                      speakText(msg.content);
-                    }
-                  }}
+                  onPress={() => speakMessage(msg)}
+                  disabled={msg.videoStatus === 'generating' || isGeneratingVideo}
                 >
-                  {isAvatarSpeaking && currentSpeakingText === msg.content ? (
-                    <Ionicons name="stop-circle" size={18} color="#EF4444" />
+                  {msg.videoStatus === 'generating' || (isGeneratingVideo && !msg.videoUrl) ? (
+                    <ActivityIndicator size="small" color="#6366F1" />
+                  ) : msg.videoUrl ? (
+                    <Ionicons name="play-circle" size={18} color="#22C55E" />
                   ) : (
                     <Ionicons name="volume-high" size={16} color="#6366F1" />
                   )}
@@ -408,23 +523,21 @@ export default function BossScreen() {
 
         {isLoading && (
           <View style={styles.loadingBubble}>
-            <View style={styles.loadingAvatar}>
-              <Video
-                source={{ uri: BOSS_AVATAR_VIDEO }}
-                style={styles.loadingAvatarVideo}
-                resizeMode={ResizeMode.COVER}
-                shouldPlay={true}
-                isLooping={true}
-                isMuted={true}
-              />
-            </View>
+            <ActivityIndicator size="small" color="#6366F1" />
             <Text style={styles.loadingText}>Boss is thinking...</Text>
+          </View>
+        )}
+
+        {isGeneratingVideo && (
+          <View style={styles.generatingBubble}>
+            <ActivityIndicator size="small" color="#22C55E" />
+            <Text style={styles.generatingText}>Generating avatar video...</Text>
           </View>
         )}
       </ScrollView>
 
       {/* Speaking Indicator */}
-      {isAvatarSpeaking && (
+      {avatarState === 'speaking' && (
         <TouchableOpacity 
           style={styles.speakingIndicator}
           onPress={stopSpeaking}
@@ -464,9 +577,63 @@ export default function BossScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Avatar Modal - Full Screen View */}
+      {/* Avatar Speaking Modal - D-ID Video Player */}
       <Modal
-        visible={showAvatarModal}
+        visible={showAvatarModal && !!speakingVideoUrl}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          setShowAvatarModal(false);
+          stopSpeaking();
+        }}
+      >
+        <View style={styles.avatarModalOverlay}>
+          <View style={styles.avatarModalContent}>
+            <TouchableOpacity
+              style={styles.closeAvatarButton}
+              onPress={() => {
+                setShowAvatarModal(false);
+                stopSpeaking();
+              }}
+            >
+              <Ionicons name="close" size={28} color="#FFF" />
+            </TouchableOpacity>
+            
+            {/* D-ID Speaking Video */}
+            <Video
+              ref={speakingVideoRef}
+              source={{ uri: speakingVideoUrl || BOSS_AVATAR_IDLE }}
+              style={styles.fullAvatarVideo}
+              resizeMode={ResizeMode.CONTAIN}
+              shouldPlay={true}
+              isLooping={false}
+              onPlaybackStatusUpdate={handleVideoEnd}
+              useNativeControls={false}
+            />
+            
+            <Text style={styles.avatarModalTitle}>Boss AI</Text>
+            <Text style={styles.avatarModalSubtitle}>Speaking Response</Text>
+            
+            {currentSpeakingText && (
+              <View style={styles.speakingTextContainer}>
+                <Text style={styles.speakingTextLabel}>Speaking:</Text>
+                <Text style={styles.speakingTextContent} numberOfLines={3}>
+                  "{currentSpeakingText}"
+                </Text>
+              </View>
+            )}
+            
+            <TouchableOpacity style={styles.stopButton} onPress={stopSpeaking}>
+              <Ionicons name="stop-circle" size={24} color="#EF4444" />
+              <Text style={styles.stopButtonText}>Stop</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Avatar Idle Modal - View avatar without speaking */}
+      <Modal
+        visible={showAvatarModal && !speakingVideoUrl}
         animationType="fade"
         transparent
         onRequestClose={() => setShowAvatarModal(false)}
@@ -481,7 +648,7 @@ export default function BossScreen() {
             </TouchableOpacity>
             
             <Video
-              source={{ uri: BOSS_AVATAR_VIDEO }}
+              source={{ uri: BOSS_AVATAR_IDLE }}
               style={styles.fullAvatarVideo}
               resizeMode={ResizeMode.CONTAIN}
               shouldPlay={true}
@@ -491,28 +658,13 @@ export default function BossScreen() {
             
             <Text style={styles.avatarModalTitle}>Boss AI</Text>
             <Text style={styles.avatarModalSubtitle}>
-              {isAvatarSpeaking ? 'Speaking...' : 'Operating Layer'}
+              {avatarState === 'thinking' ? 'Thinking...' : 'Operating Layer'}
             </Text>
             
-            {isAvatarSpeaking && currentSpeakingText && (
-              <View style={styles.speakingTextContainer}>
-                <Text style={styles.speakingTextLabel}>Currently speaking:</Text>
-                <Text style={styles.speakingTextContent} numberOfLines={3}>
-                  "{currentSpeakingText}"
-                </Text>
-                <TouchableOpacity style={styles.stopButton} onPress={stopSpeaking}>
-                  <Ionicons name="stop-circle" size={24} color="#EF4444" />
-                  <Text style={styles.stopButtonText}>Stop</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            
-            {!isAvatarSpeaking && (
-              <Text style={styles.avatarHint}>
-                The avatar speaks what Boss decides.{'\n'}
-                Boss does not live inside the avatar.
-              </Text>
-            )}
+            <Text style={styles.avatarHint}>
+              The avatar speaks what Boss decides.{'\n'}
+              Boss does not live inside the avatar.
+            </Text>
           </View>
         </View>
       </Modal>
@@ -669,46 +821,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A2E',
     marginRight: 12,
     borderWidth: 2,
-    borderColor: '#6366F1',
   },
   avatarSpeaking: {
-    borderColor: '#22C55E',
     borderWidth: 3,
-  },
-  avatarOffline: {
-    borderColor: '#444',
-    opacity: 0.7,
   },
   avatarVideo: {
     width: '100%',
     height: '100%',
-  },
-  offlineOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   headerTitle: {
     color: '#FFF',
     fontSize: 18,
     fontWeight: '600',
   },
-  projectBadge: {
-    color: '#6366F1',
-    fontSize: 12,
-    marginTop: 2,
-  },
   statusBadge: {
-    color: '#22C55E',
     fontSize: 12,
     marginTop: 2,
-  },
-  speakingBadge: {
-    color: '#22C55E',
-    fontSize: 12,
-    marginTop: 2,
-    fontWeight: '600',
   },
   settingsButton: {
     padding: 8,
@@ -814,7 +942,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#0A0A0F',
   },
-  bossAvatarSmallVideo: {
+  bossAvatarSmallImage: {
     width: '100%',
     height: '100%',
   },
@@ -921,20 +1049,23 @@ const styles = StyleSheet.create({
     padding: 14,
     alignSelf: 'flex-start',
   },
-  loadingAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#0A0A0F',
-  },
-  loadingAvatarVideo: {
-    width: '100%',
-    height: '100%',
-  },
   loadingText: {
     color: '#888',
     fontSize: 14,
+    marginLeft: 10,
+  },
+  generatingBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1A2E1A',
+    borderRadius: 16,
+    padding: 14,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+  generatingText: {
+    color: '#22C55E',
+    fontSize: 13,
     marginLeft: 10,
   },
   speakingIndicator: {
@@ -1048,9 +1179,9 @@ const styles = StyleSheet.create({
   stopButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
     backgroundColor: '#EF444420',
     borderRadius: 20,
   },
