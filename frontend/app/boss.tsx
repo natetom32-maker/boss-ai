@@ -20,7 +20,7 @@ import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { useBossStore } from '../src/store/bossStore';
 import { useAuth } from '../src/context/AuthContext';
-import api from '../src/services/api';
+import { api } from '../src/services/api';
 
 /**
  * UNIFIED BOSS AI ARCHITECTURE
