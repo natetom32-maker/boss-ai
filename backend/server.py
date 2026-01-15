@@ -780,9 +780,9 @@ async def get_project(
 
 # ================== D-ID AVATAR ==================
 
-# Boss AI Avatar source image URL (need a static image for D-ID API)
-# Using a placeholder avatar image - in production, extract a frame from the video
-BOSS_AVATAR_IMAGE = "https://create-images-results.d-id.com/DefaultPresenters/Noelle_f/thumbnail.jpeg"
+# Boss AI Avatar source image - uploaded to D-ID (user's image: Nate)
+# Using S3 URL format that D-ID accepts
+BOSS_AVATAR_IMAGE = "s3://d-id-images-prod/google-oauth2|113402578593950914795/img_NFmP39A7n8gNwDCEjzhg6/nate_simple.jpg"
 
 async def _create_did_talk(script_text: str, voice_id: str = "en-US-JennyNeural") -> Dict[str, Any]:
     """Create a D-ID talk video"""
