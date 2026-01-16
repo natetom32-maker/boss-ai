@@ -270,7 +270,7 @@ export default function BossScreen() {
         
         <TouchableOpacity style={styles.headerCenter} onPress={() => setShowAvatarModal(true)}>
           <View style={[styles.avatarContainer, { borderColor: getAvatarBorderColor() }]}>
-            <Image source={{ uri: BOSS_AVATAR_IMAGE }} style={styles.avatarImage} />
+            <Image source={BOSS_AVATAR_LOCAL} style={styles.avatarImage} />
           </View>
           <View>
             <Text style={styles.headerTitle}>Boss AI</Text>
