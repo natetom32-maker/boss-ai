@@ -1064,11 +1064,15 @@ async def create_avatar_stream(
             "agent_id": agent_id
         }
 
+class StreamConnectRequest(BaseModel):
+    """Request to connect stream with SDP answer"""
+    stream_id: str
+    session_id: str
+    sdp_answer: dict
+
 @api_router.post("/avatar/stream/connect")
 async def connect_avatar_stream(
-    stream_id: str,
-    sdp_answer: dict,
-    session_id: str,
+    request_data: StreamConnectRequest,
     current_user: User = Depends(get_current_user)
 ):
     """Send SDP answer to complete WebRTC connection"""
@@ -1076,7 +1080,7 @@ async def connect_avatar_stream(
         raise HTTPException(status_code=500, detail="D-ID API key not configured")
     
     # Get stream info
-    stream = await db.avatar_streams.find_one({"stream_id": stream_id, "user_id": current_user.user_id})
+    stream = await db.avatar_streams.find_one({"stream_id": request_data.stream_id, "user_id": current_user.user_id})
     if not stream:
         raise HTTPException(status_code=404, detail="Stream not found")
     
@@ -1085,14 +1089,14 @@ async def connect_avatar_stream(
     headers = {
         "Authorization": f"Basic {DID_API_KEY}",
         "Content-Type": "application/json",
-        "Cookie": session_id
+        "Cookie": request_data.session_id
     }
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
-            f"https://api.d-id.com/agents/{agent_id}/streams/{stream_id}/sdp",
+            f"https://api.d-id.com/agents/{agent_id}/streams/{request_data.stream_id}/sdp",
             headers=headers,
-            json={"answer": sdp_answer}
+            json={"answer": request_data.sdp_answer}
         )
         
         if response.status_code != 200:
@@ -1100,11 +1104,11 @@ async def connect_avatar_stream(
         
         # Update stream status
         await db.avatar_streams.update_one(
-            {"stream_id": stream_id},
+            {"stream_id": request_data.stream_id},
             {"$set": {"status": "connected", "connected_at": datetime.now(timezone.utc)}}
         )
         
-        return {"status": "connected", "stream_id": stream_id}
+        return {"status": "connected", "stream_id": request_data.stream_id}
 
 @api_router.post("/avatar/stream/speak")
 async def stream_speak(
