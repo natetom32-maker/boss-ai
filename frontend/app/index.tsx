@@ -16,14 +16,11 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-// Boss AI Avatar - YOUR face (Nate)
-// Note: This URL works on native apps. For web preview, a fallback icon is shown.
-const BOSS_AVATAR_IMAGE = 'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/0bqu0jph_IMG_9467.png';
+// Boss AI Avatar - YOUR face (Nate) - local asset for better compatibility
+const BOSS_AVATAR_LOCAL = require('../assets/images/boss-avatar.png');
 
-// Avatar component with fallback for web CORS issues
+// Avatar component with proper styling
 const BossAvatar = ({ size = 100, borderWidth = 3 }: { size?: number; borderWidth?: number }) => {
-  const [imageError, setImageError] = useState(false);
-  
   return (
     <View style={[
       styles.avatarContainer,
@@ -31,20 +28,14 @@ const BossAvatar = ({ size = 100, borderWidth = 3 }: { size?: number; borderWidt
         width: size, 
         height: size, 
         borderRadius: size / 2,
-        borderWidth 
+        borderWidth,
+        marginBottom: 20,
       }
     ]}>
-      {!imageError ? (
-        <Image
-          source={{ uri: BOSS_AVATAR_IMAGE }}
-          style={styles.avatarImage}
-          onError={() => setImageError(true)}
-        />
-      ) : (
-        <View style={styles.avatarFallback}>
-          <Ionicons name="person" size={size * 0.5} color="#6366F1" />
-        </View>
-      )}
+      <Image
+        source={BOSS_AVATAR_LOCAL}
+        style={styles.avatarImage}
+      />
     </View>
   );
 };
