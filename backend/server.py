@@ -71,13 +71,33 @@ EventType = Literal[
     "BOSS_ACTION"
 ]
 
-# Checkpoint types (hard stops)
+# Checkpoint types (hard stops) - internal classification
 CheckpointType = Literal[
-    "SEND_SHARE",
-    "SPEND_MONEY",
-    "DELETE_OVERWRITE",
-    "LEGAL_MEDICAL"
+    "EXTERNAL_ACTION",
+    "FINANCIAL_ACTION",
+    "DESTRUCTIVE_ACTION",
+    "SENSITIVE_ACTION"
 ]
+
+# Human-friendly checkpoint descriptions
+CHECKPOINT_DESCRIPTIONS = {
+    "EXTERNAL_ACTION": {
+        "title": "External Action",
+        "description": "Boss wants to share or send something outside the app"
+    },
+    "FINANCIAL_ACTION": {
+        "title": "Action Review",
+        "description": "Boss detected a significant action that needs your approval"
+    },
+    "DESTRUCTIVE_ACTION": {
+        "title": "Permanent Change",
+        "description": "Boss wants to make a change that may be difficult to undo"
+    },
+    "SENSITIVE_ACTION": {
+        "title": "Sensitive Topic",
+        "description": "Boss wants to proceed with advice on a sensitive matter"
+    }
+}
 
 class User(BaseModel):
     user_id: str
