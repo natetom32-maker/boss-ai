@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 # Backend URL from environment
-BACKEND_URL = "https://memory-boss.preview.emergentagent.com/api"
+BACKEND_URL = "https://ai-autopilot-4.preview.emergentagent.com/api"
 
 # Test credentials
 TEST_EMAIL = "test_backend@bossai.com"
