@@ -1082,18 +1082,28 @@ async def send_boss_message(
             user_id=current_user.user_id,
             checkpoint_type=checkpoint_info["type"],
             action_description=message_data.message,
-            context={"reason": checkpoint_info["reason"]}
+            context={
+                "reason": checkpoint_info["reason"],
+                "title": checkpoint_info.get("title", "Action Review"),
+                "approve_text": checkpoint_info.get("approve_text", "Approve"),
+                "reject_text": checkpoint_info.get("reject_text", "Reject")
+            }
         )
         await db.checkpoints.insert_one(checkpoint.model_dump())
         
+        # Friendly checkpoint message
+        checkpoint_title = checkpoint_info.get("title", "Action Review")
         return BossResponse(
-            response=f"Checkpoint Required: {checkpoint_info['reason']}. Please approve this action before I proceed.",
+            response=f"I'd like to proceed, but this requires your approval first.\n\n{checkpoint_info['reason']}",
             memory_used=[],
             decisions_made=[],
             checkpoint_required={
                 "checkpoint_id": checkpoint.checkpoint_id,
                 "type": checkpoint_info["type"],
-                "reason": checkpoint_info["reason"]
+                "reason": checkpoint_info["reason"],
+                "title": checkpoint_title,
+                "approve_text": checkpoint_info.get("approve_text", "Approve"),
+                "reject_text": checkpoint_info.get("reject_text", "Reject")
             },
             model_used="none"
         )
