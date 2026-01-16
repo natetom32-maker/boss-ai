@@ -1020,37 +1020,52 @@ def _select_model(context: str) -> Dict[str, str]:
         return MODELS[0]  # GPT for general
 
 def _check_for_checkpoint(message: str) -> Optional[Dict[str, Any]]:
-    """Check if message requires a checkpoint (hard stop)"""
+    """Check if message requires a checkpoint (hard stop)
+    
+    Checkpoints are for TRULY risky actions only:
+    - Sending data externally (emails, shares, posts)
+    - Deleting/destroying data permanently
+    - Legal/medical advice that could cause harm
+    
+    Note: We intentionally DON'T checkpoint normal conversation,
+    planning, or discussion about actions.
+    """
     message_lower = message.lower()
     
-    # Check for send/share actions
-    if any(word in message_lower for word in ["send email", "share", "publish", "post to"]):
+    # Only checkpoint EXPLICIT external actions with action verbs
+    external_triggers = ["send this email", "post this to", "share this with", "publish now"]
+    if any(trigger in message_lower for trigger in external_triggers):
         return {
-            "type": "SEND_SHARE",
-            "reason": "This action will share or send content externally"
+            "type": "EXTERNAL_ACTION",
+            "reason": "Boss wants to send or share content externally",
+            "title": "Confirm External Action",
+            "approve_text": "Yes, send it",
+            "reject_text": "No, don't send"
         }
     
-    # Check for spending money
-    if any(word in message_lower for word in ["buy", "purchase", "pay", "subscribe", "charge"]):
+    # Only checkpoint EXPLICIT delete commands
+    delete_triggers = ["delete all", "erase everything", "remove permanently", "destroy the"]
+    if any(trigger in message_lower for trigger in delete_triggers):
         return {
-            "type": "SPEND_MONEY",
-            "reason": "This action involves spending money"
+            "type": "DESTRUCTIVE_ACTION",
+            "reason": "Boss wants to permanently delete or remove data",
+            "title": "Confirm Permanent Action",
+            "approve_text": "Yes, proceed",
+            "reject_text": "No, keep it"
         }
     
-    # Check for delete/overwrite
-    if any(word in message_lower for word in ["delete", "remove", "overwrite", "erase"]):
+    # Only checkpoint actual legal/medical advice requests
+    sensitive_triggers = ["give me legal advice about", "diagnose my", "what medicine should"]
+    if any(trigger in message_lower for trigger in sensitive_triggers):
         return {
-            "type": "DELETE_OVERWRITE",
-            "reason": "This action will delete or overwrite data"
+            "type": "SENSITIVE_ACTION",
+            "reason": "This involves sensitive professional advice",
+            "title": "Sensitive Topic",
+            "approve_text": "I understand, continue",
+            "reject_text": "Let's skip this"
         }
     
-    # Check for legal/medical
-    if any(word in message_lower for word in ["legal", "lawsuit", "medical advice", "diagnosis"]):
-        return {
-            "type": "LEGAL_MEDICAL",
-            "reason": "This involves legal or medical claims"
-        }
-    
+    # NO checkpoint for normal conversation, planning, or general discussion
     return None
 
 @api_router.post("/boss/message", response_model=BossResponse)
