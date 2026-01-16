@@ -1100,11 +1100,6 @@ async def create_avatar_stream(
             "agent_id": agent_id,
             "reused": False
         }
-            "session_id": stream_data.get("session_id"),
-            "offer": stream_data.get("offer"),  # SDP offer for WebRTC
-            "ice_servers": stream_data.get("ice_servers", []),
-            "agent_id": agent_id
-        }
 
 class StreamConnectRequest(BaseModel):
     """Request to connect stream with SDP answer"""
