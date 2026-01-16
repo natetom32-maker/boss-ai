@@ -28,7 +28,7 @@ import { api } from '../src/services/api';
  * Boss AI Core = Single source of truth (api.boss.ai)
  * D-ID Avatar = Presentation layer only (speaks what Boss decides)
  * 
- * Real-time streaming: WebRTC connection to D-ID for instant speech
+ * Avatar: Uses YOUR face (Nate) consistently everywhere
  */
 
 interface Message {
@@ -46,26 +46,16 @@ interface Message {
     approve_text?: string;
     reject_text?: string;
   };
+  videoUrl?: string;
 }
 
-// Avatar images
-const BOSS_AVATAR_IDLE = 'https://customer-assets.emergentagent.com/job_2aa2b813-f5fe-4ade-a9d9-bc418df86344/artifacts/ymhkyqfe_generated_video_hd.mp4';
+// YOUR face (Nate) - used consistently throughout the app
 const BOSS_AVATAR_IMAGE = 'https://customer-assets.emergentagent.com/job_2aa2b813-f5fe-4ade-a9d9-bc418df86344/artifacts/maffvqbd_nate%20without%20background.png';
-
-// WebRTC Stream state
-interface StreamState {
-  isConnected: boolean;
-  isConnecting: boolean;
-  streamId: string | null;
-  sessionId: string | null;
-}
 
 export default function BossScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
-  const streamVideoRef = useRef<HTMLVideoElement>(null);
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const { user, logout } = useAuth();
   
   const {
@@ -83,12 +73,6 @@ export default function BossScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const [avatarState, setAvatarState] = useState<'idle' | 'thinking' | 'speaking'>('idle');
   const [showAvatarModal, setShowAvatarModal] = useState(false);
-  
-  // Real-time stream state (disabled - using Talks API instead)
-  // D-ID WebRTC streaming has session limits that make it unreliable
-  // const [streamState, setStreamState] = useState<StreamState>({...});
-  
-  // Video generation state
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [currentVideoUrl, setCurrentVideoUrl] = useState<string | null>(null);
 
@@ -97,104 +81,65 @@ export default function BossScreen() {
   }, [currentProject]);
 
   /**
-   * Connect to D-ID real-time stream via WebRTC
+   * Generate D-ID video of YOUR face speaking the text
    */
-  const connectStream = useCallback(async () => {
-    if (streamState.isConnected || streamState.isConnecting) return;
-    
-    setStreamState(prev => ({ ...prev, isConnecting: true }));
+  const generateAvatarVideo = async (text: string, messageId?: string): Promise<string | null> => {
+    setIsGeneratingVideo(true);
+    setAvatarState('thinking');
     
     try {
-      // 1. Create stream on backend
-      const createResponse = await api.post('/avatar/stream/create', {});
-      const { stream_id, session_id, offer, ice_servers } = createResponse.data;
-      
-      // 2. Create RTCPeerConnection (web only for now)
-      if (Platform.OS === 'web' && typeof RTCPeerConnection !== 'undefined') {
-        const config: RTCConfiguration = {
-          iceServers: ice_servers?.length > 0 
-            ? ice_servers 
-            : [{ urls: 'stun:stun.l.google.com:19302' }],
-        };
-        
-        const pc = new RTCPeerConnection(config);
-        peerConnectionRef.current = pc;
-        
-        // Handle incoming video
-        pc.ontrack = (event) => {
-          if (event.track.kind === 'video' && streamVideoRef.current) {
-            const stream = new MediaStream([event.track]);
-            streamVideoRef.current.srcObject = stream;
-            streamVideoRef.current.play().catch(console.error);
-          }
-        };
-        
-        // Set remote description and create answer
-        if (offer) {
-          await pc.setRemoteDescription(new RTCSessionDescription(offer));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          
-          // Send answer to backend
-          await api.post('/avatar/stream/connect', {
-            stream_id,
-            session_id,
-            sdp_answer: answer,
-          });
-        }
-        
-        setStreamState({
-          isConnected: true,
-          isConnecting: false,
-          streamId: stream_id,
-          sessionId: session_id,
-        });
-      } else {
-        // Mobile - use fallback TTS
-        setStreamState(prev => ({ ...prev, isConnecting: false }));
-      }
-    } catch (error) {
-      console.error('Stream connection error:', error);
-      setStreamState(prev => ({ ...prev, isConnecting: false }));
-    }
-  }, [streamState.isConnected, streamState.isConnecting]);
-
-  /**
-   * Make avatar speak via real-time stream
-   */
-  const streamSpeak = useCallback(async (text: string) => {
-    if (!streamState.isConnected || !streamState.streamId) {
-      // Fallback to TTS
-      speakWithTTS(text);
-      return;
-    }
-    
-    setAvatarState('speaking');
-    
-    try {
-      await api.post('/avatar/stream/speak', {
-        stream_id: streamState.streamId,
-        session_id: streamState.sessionId,
-        text: text,
+      // Call backend to generate D-ID video with YOUR face
+      const response = await api.post('/avatar/generate', {
+        script_text: text.substring(0, 500),
+        voice_id: 'pNInz6obpgDQGcFmaJgB' // ElevenLabs voice
       });
       
-      // Estimate speaking duration
-      const wordCount = text.split(' ').length;
-      const duration = Math.max(2000, wordCount * 150);
+      const videoId = response.data.video_id;
       
-      setTimeout(() => {
-        setAvatarState('idle');
-      }, duration);
+      // Poll for completion (usually ~4-6 seconds)
+      let attempts = 0;
+      while (attempts < 30) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const statusResponse = await api.get(`/avatar/status/${videoId}`);
+        
+        if (statusResponse.data.status === 'completed') {
+          const videoUrl = statusResponse.data.result_video_url;
+          
+          if (messageId) {
+            setMessages(prev => prev.map(msg => 
+              msg.id === messageId ? { ...msg, videoUrl } : msg
+            ));
+          }
+          
+          setIsGeneratingVideo(false);
+          return videoUrl;
+        } else if (statusResponse.data.status === 'failed') {
+          setIsGeneratingVideo(false);
+          return null;
+        }
+        attempts++;
+      }
+      
+      setIsGeneratingVideo(false);
+      return null;
     } catch (error) {
-      console.error('Stream speak error:', error);
-      setAvatarState('idle');
-      // Fallback to TTS
-      speakWithTTS(text);
+      console.error('Video generation error:', error);
+      setIsGeneratingVideo(false);
+      return null;
     }
-  }, [streamState]);
+  };
 
   /**
-   * Fallback: Browser TTS
+   * Play video of YOUR face speaking
+   */
+  const playAvatarVideo = (videoUrl: string) => {
+    setCurrentVideoUrl(videoUrl);
+    setAvatarState('speaking');
+    setShowAvatarModal(true);
+  };
+
+  /**
+   * Fallback: Browser TTS (no video)
    */
   const speakWithTTS = async (text: string) => {
     try {
@@ -218,6 +163,7 @@ export default function BossScreen() {
    */
   const stopSpeaking = async () => {
     await Speech.stop();
+    setCurrentVideoUrl(null);
     setAvatarState('idle');
   };
 
@@ -257,15 +203,15 @@ export default function BossScreen() {
       setAvatarState('idle');
       fetchMemoryReceipt(currentProject?.project_id);
 
-      // Speak response if requested
+      // Speak response if requested (generates video of YOUR face)
       if (shouldSpeak && !response.checkpoint_required) {
-        setTimeout(() => {
-          if (streamState.isConnected) {
-            streamSpeak(response.response);
-          } else {
-            speakWithTTS(response.response);
-          }
-        }, 300);
+        const videoUrl = await generateAvatarVideo(response.response, bossMessage.id);
+        if (videoUrl) {
+          playAvatarVideo(videoUrl);
+        } else {
+          // Fallback to TTS if video fails
+          speakWithTTS(response.response);
+        }
       }
     } catch (error: any) {
       setAvatarState('idle');
@@ -279,6 +225,22 @@ export default function BossScreen() {
     }
 
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+  };
+
+  /**
+   * Speak a message (tap speaker icon)
+   */
+  const speakMessage = async (msg: Message) => {
+    if (msg.videoUrl) {
+      playAvatarVideo(msg.videoUrl);
+    } else {
+      const videoUrl = await generateAvatarVideo(msg.content, msg.id);
+      if (videoUrl) {
+        playAvatarVideo(videoUrl);
+      } else {
+        speakWithTTS(msg.content);
+      }
+    }
   };
 
   const handleCheckpointResolve = async (checkpointId: string, status: 'APPROVED' | 'REJECTED') => {
@@ -300,7 +262,7 @@ export default function BossScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Header */}
+      {/* Header - YOUR face */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color="#FFF" />
@@ -314,8 +276,7 @@ export default function BossScreen() {
             <Text style={styles.headerTitle}>Boss AI</Text>
             <Text style={[styles.statusBadge, { color: getAvatarBorderColor() }]}>
               {avatarState === 'speaking' ? 'Speaking...' : 
-               avatarState === 'thinking' ? 'Thinking...' : 
-               streamState.isConnected ? 'Stream Ready' : 'Ready'}
+               avatarState === 'thinking' ? 'Thinking...' : 'Ready'}
             </Text>
           </View>
         </TouchableOpacity>
@@ -324,17 +285,6 @@ export default function BossScreen() {
           <Ionicons name="ellipsis-vertical" size={20} color="#888" />
         </TouchableOpacity>
       </View>
-
-      {/* Stream Connection Banner */}
-      {!streamState.isConnected && (
-        <TouchableOpacity style={styles.streamBanner} onPress={connectStream}>
-          <Ionicons name="videocam" size={16} color="#6366F1" />
-          <Text style={styles.streamBannerText}>
-            {streamState.isConnecting ? 'Connecting stream...' : 'Tap to enable real-time avatar'}
-          </Text>
-          {streamState.isConnecting && <ActivityIndicator size="small" color="#6366F1" />}
-        </TouchableOpacity>
-      )}
 
       {/* Memory Bar */}
       <TouchableOpacity style={styles.memoryBar} onPress={() => setShowMemoryReceipt(true)}>
@@ -369,13 +319,21 @@ export default function BossScreen() {
           >
             {msg.type === 'boss' && (
               <View style={styles.bossHeader}>
+                {/* YOUR face in message bubble */}
                 <Image source={{ uri: BOSS_AVATAR_IMAGE }} style={styles.bossAvatarSmall} />
                 {msg.modelUsed && <Text style={styles.modelBadge}>{msg.modelUsed}</Text>}
                 <TouchableOpacity
                   style={styles.speakButton}
-                  onPress={() => streamState.isConnected ? streamSpeak(msg.content) : speakWithTTS(msg.content)}
+                  onPress={() => speakMessage(msg)}
+                  disabled={isGeneratingVideo}
                 >
-                  <Ionicons name="volume-high" size={16} color="#6366F1" />
+                  {isGeneratingVideo ? (
+                    <ActivityIndicator size="small" color="#6366F1" />
+                  ) : msg.videoUrl ? (
+                    <Ionicons name="play-circle" size={18} color="#22C55E" />
+                  ) : (
+                    <Ionicons name="volume-high" size={16} color="#6366F1" />
+                  )}
                 </TouchableOpacity>
               </View>
             )}
@@ -426,6 +384,13 @@ export default function BossScreen() {
             <Text style={styles.loadingText}>Boss is thinking...</Text>
           </View>
         )}
+
+        {isGeneratingVideo && (
+          <View style={styles.generatingBubble}>
+            <ActivityIndicator size="small" color="#22C55E" />
+            <Text style={styles.generatingText}>Generating avatar video...</Text>
+          </View>
+        )}
       </ScrollView>
 
       {/* Speaking Indicator */}
@@ -458,36 +423,42 @@ export default function BossScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Avatar Modal */}
-      <Modal visible={showAvatarModal} animationType="fade" transparent onRequestClose={() => setShowAvatarModal(false)}>
+      {/* Avatar Modal - Shows YOUR face speaking (video) */}
+      <Modal visible={showAvatarModal} animationType="fade" transparent onRequestClose={() => { setShowAvatarModal(false); stopSpeaking(); }}>
         <View style={styles.avatarModalOverlay}>
           <View style={styles.avatarModalContent}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setShowAvatarModal(false)}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => { setShowAvatarModal(false); stopSpeaking(); }}>
               <Ionicons name="close" size={28} color="#FFF" />
             </TouchableOpacity>
             
-            <Image source={{ uri: BOSS_AVATAR_IMAGE }} style={styles.fullAvatar} />
+            {/* Show video if available, otherwise show image */}
+            {currentVideoUrl ? (
+              <Video
+                source={{ uri: currentVideoUrl }}
+                style={styles.fullAvatarVideo}
+                resizeMode={ResizeMode.CONTAIN}
+                shouldPlay={true}
+                isLooping={false}
+                onPlaybackStatusUpdate={(status) => {
+                  if (status.isLoaded && status.didJustFinish) {
+                    setAvatarState('idle');
+                  }
+                }}
+              />
+            ) : (
+              <Image source={{ uri: BOSS_AVATAR_IMAGE }} style={styles.fullAvatar} />
+            )}
             
             <Text style={styles.avatarModalTitle}>Boss AI</Text>
             <Text style={styles.avatarModalSubtitle}>
-              {streamState.isConnected ? 'Real-time Stream Active' : 'Operating Layer'}
+              {currentVideoUrl ? 'Speaking...' : 'Operating Layer'}
             </Text>
             
-            {!streamState.isConnected && (
-              <TouchableOpacity style={styles.connectStreamButton} onPress={connectStream}>
-                <Ionicons name="videocam" size={20} color="#FFF" />
-                <Text style={styles.connectStreamText}>Enable Real-time Avatar</Text>
+            {currentVideoUrl && (
+              <TouchableOpacity style={styles.stopButton} onPress={stopSpeaking}>
+                <Ionicons name="stop-circle" size={24} color="#EF4444" />
+                <Text style={styles.stopButtonText}>Stop</Text>
               </TouchableOpacity>
-            )}
-            
-            {/* WebRTC Video (hidden, for stream) */}
-            {Platform.OS === 'web' && streamState.isConnected && (
-              <video
-                ref={streamVideoRef as any}
-                style={{ width: '100%', maxWidth: 300, borderRadius: 12, marginTop: 16 }}
-                autoPlay
-                playsInline
-              />
             )}
           </View>
         </View>
@@ -532,7 +503,7 @@ export default function BossScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowSettings(false)}>
           <View style={styles.settingsMenu}>
             <View style={styles.userInfo}>
-              <Ionicons name="person-circle" size={40} color="#6366F1" />
+              <Image source={{ uri: BOSS_AVATAR_IMAGE }} style={styles.settingsAvatar} />
               <View style={styles.userDetails}>
                 <Text style={styles.userName}>{user?.name}</Text>
                 <Text style={styles.userEmail}>{user?.email}</Text>
@@ -587,15 +558,6 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#FFF', fontSize: 18, fontWeight: '600' },
   statusBadge: { fontSize: 12, marginTop: 2 },
   settingsButton: { padding: 8 },
-  streamBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#6366F115',
-    paddingVertical: 8,
-    gap: 8,
-  },
-  streamBannerText: { color: '#6366F1', fontSize: 12 },
   memoryBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -640,6 +602,8 @@ const styles = StyleSheet.create({
   memoryUsedText: { color: '#6366F1', fontSize: 11, marginLeft: 6 },
   loadingBubble: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A2E', borderRadius: 16, padding: 14, alignSelf: 'flex-start' },
   loadingText: { color: '#888', fontSize: 14, marginLeft: 10 },
+  generatingBubble: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A2E1A', borderRadius: 16, padding: 14, alignSelf: 'flex-start', marginTop: 8 },
+  generatingText: { color: '#22C55E', fontSize: 13, marginLeft: 10 },
   speakingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#22C55E20', paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#22C55E40' },
   speakingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E', marginRight: 8 },
   speakingIndicatorText: { color: '#22C55E', fontSize: 13, fontWeight: '500' },
@@ -649,12 +613,13 @@ const styles = StyleSheet.create({
   sendButtonDisabled: { backgroundColor: '#1A1A2E' },
   avatarModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
   avatarModalContent: { width: SCREEN_WIDTH * 0.9, maxWidth: 400, alignItems: 'center' },
-  closeButton: { position: 'absolute', top: -50, right: 0, padding: 10 },
-  fullAvatar: { width: 200, height: 200, borderRadius: 100, backgroundColor: '#1A1A2E' },
+  closeButton: { position: 'absolute', top: -50, right: 0, padding: 10, zIndex: 10 },
+  fullAvatar: { width: 250, height: 250, borderRadius: 125, backgroundColor: '#1A1A2E' },
+  fullAvatarVideo: { width: 300, height: 300, borderRadius: 20, backgroundColor: '#1A1A2E' },
   avatarModalTitle: { color: '#FFF', fontSize: 24, fontWeight: '700', marginTop: 20 },
   avatarModalSubtitle: { color: '#6366F1', fontSize: 14, marginTop: 4 },
-  connectStreamButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#6366F1', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 20, marginTop: 20, gap: 8 },
-  connectStreamText: { color: '#FFF', fontWeight: '600' },
+  stopButton: { flexDirection: 'row', alignItems: 'center', marginTop: 20, paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#EF444420', borderRadius: 20 },
+  stopButtonText: { color: '#EF4444', marginLeft: 8, fontWeight: '600' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#12121A', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#1A1A2E' },
@@ -670,6 +635,7 @@ const styles = StyleSheet.create({
   noReceipt: { color: '#666', fontSize: 14, textAlign: 'center', paddingVertical: 40 },
   settingsMenu: { backgroundColor: '#12121A', borderRadius: 16, margin: 20, marginTop: 'auto', marginBottom: 40, padding: 16 },
   userInfo: { flexDirection: 'row', alignItems: 'center', paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#1A1A2E', marginBottom: 8 },
+  settingsAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1A1A2E' },
   userDetails: { marginLeft: 12 },
   userName: { color: '#FFF', fontSize: 16, fontWeight: '600' },
   userEmail: { color: '#888', fontSize: 13, marginTop: 2 },
