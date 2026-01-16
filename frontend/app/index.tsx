@@ -363,6 +363,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  avatarContainer: {
+    overflow: 'hidden',
+    backgroundColor: '#1A1A2E',
+    borderColor: '#6366F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  avatarFallback: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1A1A2E',
+  },
   bossAvatarLoading: {
     width: 100,
     height: 100,
@@ -393,11 +412,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A2E',
     borderWidth: 3,
     borderColor: '#6366F1',
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
   },
   avatarVideo: {
     width: '100%',
