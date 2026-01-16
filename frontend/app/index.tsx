@@ -110,12 +110,7 @@ export default function Index() {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.loadingContainer}>
-          <View style={styles.bossAvatarLoading}>
-            <Image
-              source={{ uri: BOSS_AVATAR_IMAGE }}
-              style={styles.avatarImage}
-            />
-          </View>
+          <BossAvatar size={100} borderWidth={2} />
           <ActivityIndicator size="large" color="#6366F1" style={styles.loader} />
           <Text style={styles.loadingText}>Initializing Boss AI...</Text>
         </View>
@@ -127,12 +122,7 @@ export default function Index() {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <View style={styles.bossAvatarLarge}>
-            <Image
-              source={{ uri: BOSS_AVATAR_IMAGE }}
-              style={styles.avatarImage}
-            />
-          </View>
+          <BossAvatar size={100} borderWidth={3} />
           <Text style={styles.welcomeText}>Welcome back,</Text>
           <Text style={styles.userName}>{user?.name}</Text>
         </View>
