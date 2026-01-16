@@ -84,13 +84,13 @@ export default function BossScreen() {
   const [avatarState, setAvatarState] = useState<'idle' | 'thinking' | 'speaking'>('idle');
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   
-  // Real-time stream state
-  const [streamState, setStreamState] = useState<StreamState>({
-    isConnected: false,
-    isConnecting: false,
-    streamId: null,
-    sessionId: null,
-  });
+  // Real-time stream state (disabled - using Talks API instead)
+  // D-ID WebRTC streaming has session limits that make it unreliable
+  // const [streamState, setStreamState] = useState<StreamState>({...});
+  
+  // Video generation state
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [currentVideoUrl, setCurrentVideoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     fetchMemoryReceipt(currentProject?.project_id);
