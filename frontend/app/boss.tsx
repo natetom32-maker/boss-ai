@@ -49,8 +49,8 @@ interface Message {
   videoUrl?: string;
 }
 
-// YOUR face (Nate) - used consistently throughout the app
-const BOSS_AVATAR_IMAGE = 'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/0bqu0jph_IMG_9467.png';
+// YOUR face (Nate) - used consistently throughout the app (local asset)
+const BOSS_AVATAR_LOCAL = require('../assets/images/boss-avatar.png');
 
 export default function BossScreen() {
   const insets = useSafeAreaInsets();
