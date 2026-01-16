@@ -76,7 +76,8 @@ CheckpointType = Literal[
     "EXTERNAL_ACTION",
     "FINANCIAL_ACTION",
     "DESTRUCTIVE_ACTION",
-    "SENSITIVE_ACTION"
+    "SENSITIVE_ACTION",
+    "SPEND_ACTION"
 ]
 
 # Human-friendly checkpoint descriptions
