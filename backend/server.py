@@ -999,6 +999,190 @@ async def get_avatar_videos(
     
     return videos
 
+# ================== D-ID STREAMING (Real-time Avatar) ==================
+
+# D-ID Agent ID for streaming (uses existing agent with ElevenLabs voice)
+DID_AGENT_ID = "v2_agt_4i425Kpe"
+
+class StreamRequest(BaseModel):
+    """Request to create a D-ID stream"""
+    agent_id: Optional[str] = None
+
+class StreamMessageRequest(BaseModel):
+    """Send a message to the avatar stream"""
+    stream_id: str
+    session_id: str
+    text: str  # The EXACT text for avatar to speak (from Boss AI)
+
+@api_router.post("/avatar/stream/create")
+async def create_avatar_stream(
+    request_data: StreamRequest = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Create a D-ID WebRTC stream for real-time avatar
+    
+    Returns SDP offer and ICE servers for WebRTC connection.
+    The frontend uses this to establish a real-time video stream.
+    """
+    if not DID_API_KEY:
+        raise HTTPException(status_code=500, detail="D-ID API key not configured")
+    
+    agent_id = request_data.agent_id if request_data and request_data.agent_id else DID_AGENT_ID
+    
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"https://api.d-id.com/agents/{agent_id}/streams",
+            headers=headers,
+            json={}
+        )
+        
+        if response.status_code != 200 and response.status_code != 201:
+            raise HTTPException(status_code=response.status_code, detail=f"D-ID stream creation failed: {response.text}")
+        
+        stream_data = response.json()
+        
+        # Store stream info
+        await db.avatar_streams.insert_one({
+            "stream_id": stream_data.get("id"),
+            "user_id": current_user.user_id,
+            "agent_id": agent_id,
+            "session_id": stream_data.get("session_id"),
+            "status": "created",
+            "created_at": datetime.now(timezone.utc)
+        })
+        
+        return {
+            "stream_id": stream_data.get("id"),
+            "session_id": stream_data.get("session_id"),
+            "offer": stream_data.get("offer"),  # SDP offer for WebRTC
+            "ice_servers": stream_data.get("ice_servers", []),
+            "agent_id": agent_id
+        }
+
+@api_router.post("/avatar/stream/connect")
+async def connect_avatar_stream(
+    stream_id: str,
+    sdp_answer: dict,
+    session_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Send SDP answer to complete WebRTC connection"""
+    if not DID_API_KEY:
+        raise HTTPException(status_code=500, detail="D-ID API key not configured")
+    
+    # Get stream info
+    stream = await db.avatar_streams.find_one({"stream_id": stream_id, "user_id": current_user.user_id})
+    if not stream:
+        raise HTTPException(status_code=404, detail="Stream not found")
+    
+    agent_id = stream.get("agent_id", DID_AGENT_ID)
+    
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}",
+        "Content-Type": "application/json",
+        "Cookie": session_id
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"https://api.d-id.com/agents/{agent_id}/streams/{stream_id}/sdp",
+            headers=headers,
+            json={"answer": sdp_answer}
+        )
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"D-ID connection failed: {response.text}")
+        
+        # Update stream status
+        await db.avatar_streams.update_one(
+            {"stream_id": stream_id},
+            {"$set": {"status": "connected", "connected_at": datetime.now(timezone.utc)}}
+        )
+        
+        return {"status": "connected", "stream_id": stream_id}
+
+@api_router.post("/avatar/stream/speak")
+async def stream_speak(
+    request_data: StreamMessageRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Make the avatar speak text in real-time
+    
+    This sends the EXACT text (from Boss AI) to the avatar.
+    The avatar does NOT interpret or modify the text - it only speaks it.
+    """
+    if not DID_API_KEY:
+        raise HTTPException(status_code=500, detail="D-ID API key not configured")
+    
+    # Get stream info
+    stream = await db.avatar_streams.find_one({"stream_id": request_data.stream_id, "user_id": current_user.user_id})
+    if not stream:
+        raise HTTPException(status_code=404, detail="Stream not found")
+    
+    agent_id = stream.get("agent_id", DID_AGENT_ID)
+    
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}",
+        "Content-Type": "application/json",
+        "Cookie": request_data.session_id
+    }
+    
+    # Send text directly to avatar to speak (no AI processing by D-ID)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"https://api.d-id.com/agents/{agent_id}/streams/{request_data.stream_id}/chat",
+            headers=headers,
+            json={
+                "messages": [
+                    {"role": "user", "content": f"[SPEAK EXACTLY]: {request_data.text}"}
+                ],
+                "stream": True
+            }
+        )
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"D-ID speak failed: {response.text}")
+        
+        return {"status": "speaking", "text": request_data.text}
+
+@api_router.delete("/avatar/stream/{stream_id}")
+async def close_avatar_stream(
+    stream_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Close a D-ID stream"""
+    if not DID_API_KEY:
+        raise HTTPException(status_code=500, detail="D-ID API key not configured")
+    
+    stream = await db.avatar_streams.find_one({"stream_id": stream_id, "user_id": current_user.user_id})
+    if not stream:
+        raise HTTPException(status_code=404, detail="Stream not found")
+    
+    agent_id = stream.get("agent_id", DID_AGENT_ID)
+    
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}"
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        await client.delete(
+            f"https://api.d-id.com/agents/{agent_id}/streams/{stream_id}",
+            headers=headers
+        )
+    
+    # Update stream status
+    await db.avatar_streams.update_one(
+        {"stream_id": stream_id},
+        {"$set": {"status": "closed", "closed_at": datetime.now(timezone.utc)}}
+    )
+    
+    return {"status": "closed", "stream_id": stream_id}
+
 # ================== BOSS AI ==================
 
 # Available models for auto-selection
