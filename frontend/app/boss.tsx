@@ -302,7 +302,7 @@ export default function BossScreen() {
       <ScrollView ref={scrollRef} style={styles.messagesContainer} contentContainerStyle={styles.messagesContent}>
         {messages.length === 0 && (
           <View style={styles.emptyState}>
-            <Image source={{ uri: BOSS_AVATAR_IMAGE }} style={styles.emptyAvatar} />
+            <Image source={BOSS_AVATAR_LOCAL} style={styles.emptyAvatar} />
             <Text style={styles.emptyTitle}>Boss is ready</Text>
             <Text style={styles.emptySubtitle}>
               I'll proceed automatically and only pause at checkpoints.
