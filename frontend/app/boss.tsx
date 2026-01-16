@@ -50,7 +50,7 @@ interface Message {
 }
 
 // YOUR face (Nate) - used consistently throughout the app
-const BOSS_AVATAR_IMAGE = 'https://customer-assets.emergentagent.com/job_2aa2b813-f5fe-4ade-a9d9-bc418df86344/artifacts/maffvqbd_nate%20without%20background.png';
+const BOSS_AVATAR_IMAGE = 'https://customer-assets.emergentagent.com/job_boss-ai-1/artifacts/0bqu0jph_IMG_9467.png';
 
 export default function BossScreen() {
   const insets = useSafeAreaInsets();
