@@ -1,5 +1,26 @@
 # Boss AI Architecture
 
+## Canonical Domain
+
+**Boss AI Core is a standalone API service.**
+
+```
+Production:  https://api.boss.ai
+Development: https://*.pages.dev/api (temporary)
+```
+
+**All integrations (D-ID, mobile apps, web apps) connect to ONE canonical Boss API host.**
+
+Boss AI is:
+- ✅ App-agnostic (works with any frontend)
+- ✅ Domain-permanent (canonical API URL)
+- ✅ Single source of truth for memory, decisions, checkpoints
+
+Boss AI is NOT:
+- ❌ Tied to any specific frontend
+- ❌ Tied to any avatar or presentation layer
+- ❌ Dependent on D-ID or any single integration
+
 ## Unified System Design
 
 Boss AI is a **single integrated system**, not separate components. The D-ID avatar is a **presentation layer** that sits on top of the Boss AI Core.
