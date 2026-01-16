@@ -81,13 +81,9 @@ export default function Index() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.loadingContainer}>
           <View style={styles.bossAvatarLoading}>
-            <Video
-              source={{ uri: BOSS_AVATAR_VIDEO }}
-              style={styles.avatarVideoSmall}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay={true}
-              isLooping={true}
-              isMuted={true}
+            <Image
+              source={{ uri: BOSS_AVATAR_IMAGE }}
+              style={styles.avatarImage}
             />
           </View>
           <ActivityIndicator size="large" color="#6366F1" style={styles.loader} />
@@ -102,13 +98,9 @@ export default function Index() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
           <View style={styles.bossAvatarLarge}>
-            <Video
-              source={{ uri: BOSS_AVATAR_VIDEO }}
-              style={styles.avatarVideo}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay={true}
-              isLooping={true}
-              isMuted={true}
+            <Image
+              source={{ uri: BOSS_AVATAR_IMAGE }}
+              style={styles.avatarImage}
             />
           </View>
           <Text style={styles.welcomeText}>Welcome back,</Text>
