@@ -320,7 +320,7 @@ export default function BossScreen() {
             {msg.type === 'boss' && (
               <View style={styles.bossHeader}>
                 {/* YOUR face in message bubble */}
-                <Image source={{ uri: BOSS_AVATAR_IMAGE }} style={styles.bossAvatarSmall} />
+                <Image source={BOSS_AVATAR_LOCAL} style={styles.bossAvatarSmall} />
                 {msg.modelUsed && <Text style={styles.modelBadge}>{msg.modelUsed}</Text>}
                 <TouchableOpacity
                   style={styles.speakButton}
