@@ -379,6 +379,11 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#6366F1',
   },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
   avatarVideo: {
     width: '100%',
     height: '100%',
