@@ -197,12 +197,7 @@ export default function Index() {
       >
         {/* Hero Section */}
         <View style={styles.heroSection}>
-          <View style={styles.bossAvatarHero}>
-            <Image
-              source={{ uri: BOSS_AVATAR_IMAGE }}
-              style={styles.avatarImage}
-            />
-          </View>
+          <BossAvatar size={120} borderWidth={3} />
           
           <Text style={styles.title}>Boss AI</Text>
           <Text style={styles.subtitle}>Operating Layer</Text>
