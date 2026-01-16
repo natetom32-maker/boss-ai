@@ -477,14 +477,16 @@ export default function BossScreen() {
             {msg.checkpointRequired && (
               <View style={styles.checkpointCard}>
                 <View style={styles.checkpointHeader}>
-                  <Ionicons name="warning" size={20} color="#F59E0B" />
-                  <Text style={styles.checkpointTitle}>Checkpoint Required</Text>
+                  <Ionicons name="hand-right" size={20} color="#6366F1" />
+                  <Text style={styles.checkpointTitle}>
+                    {msg.checkpointRequired.title || 'Your Approval Needed'}
+                  </Text>
                 </View>
-                <Text style={styles.checkpointType}>
-                  {msg.checkpointRequired.type.replace('_', ' ')}
-                </Text>
                 <Text style={styles.checkpointReason}>
                   {msg.checkpointRequired.reason}
+                </Text>
+                <Text style={styles.checkpointHint}>
+                  Boss will save your conversation either way.
                 </Text>
                 <View style={styles.checkpointActions}>
                   <TouchableOpacity
@@ -496,7 +498,9 @@ export default function BossScreen() {
                       )
                     }
                   >
-                    <Text style={styles.rejectButtonText}>Reject</Text>
+                    <Text style={styles.rejectButtonText}>
+                      {msg.checkpointRequired.reject_text || "Don't proceed"}
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.approveButton}
@@ -507,7 +511,9 @@ export default function BossScreen() {
                       )
                     }
                   >
-                    <Text style={styles.approveButtonText}>Approve</Text>
+                    <Text style={styles.approveButtonText}>
+                      {msg.checkpointRequired.approve_text || 'Yes, continue'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
