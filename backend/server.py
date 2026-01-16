@@ -1034,17 +1034,15 @@ def _check_for_checkpoint(message: str) -> Optional[Dict[str, Any]]:
     """
     message_lower = message.lower()
     
-    # SPENDING CHECKPOINT - requires explicit "APPROVE SPEND"
+    # SPENDING CHECKPOINT - requires explicit approval
     spend_triggers = ["pay for", "purchase now", "buy now", "subscribe to", "charge my", "use paid", "upgrade to premium"]
     if any(trigger in message_lower for trigger in spend_triggers):
         return {
             "type": "SPEND_ACTION",
             "reason": "This action involves spending money or using paid services",
             "title": "Spending Approval Required",
-            "approve_text": "APPROVE SPEND",
-            "reject_text": "No, don't spend",
-            "requires_exact_phrase": True,
-            "exact_phrase": "APPROVE SPEND"
+            "approve_text": "Approve",
+            "reject_text": "Reject"
         }
     
     # Only checkpoint EXPLICIT external actions with action verbs
