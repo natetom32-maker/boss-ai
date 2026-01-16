@@ -503,7 +503,7 @@ export default function BossScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowSettings(false)}>
           <View style={styles.settingsMenu}>
             <View style={styles.userInfo}>
-              <Image source={{ uri: BOSS_AVATAR_IMAGE }} style={styles.settingsAvatar} />
+              <Image source={BOSS_AVATAR_LOCAL} style={styles.settingsAvatar} />
               <View style={styles.userDetails}>
                 <Text style={styles.userName}>{user?.name}</Text>
                 <Text style={styles.userEmail}>{user?.email}</Text>
