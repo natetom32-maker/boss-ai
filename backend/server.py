@@ -1024,6 +1024,7 @@ def _check_for_checkpoint(message: str) -> Optional[Dict[str, Any]]:
     
     Checkpoints are for TRULY risky actions only:
     - Sending data externally (emails, shares, posts)
+    - Spending money or using paid services
     - Deleting/destroying data permanently
     - Legal/medical advice that could cause harm
     
@@ -1031,6 +1032,19 @@ def _check_for_checkpoint(message: str) -> Optional[Dict[str, Any]]:
     planning, or discussion about actions.
     """
     message_lower = message.lower()
+    
+    # SPENDING CHECKPOINT - requires explicit "APPROVE SPEND"
+    spend_triggers = ["pay for", "purchase now", "buy now", "subscribe to", "charge my", "use paid", "upgrade to premium"]
+    if any(trigger in message_lower for trigger in spend_triggers):
+        return {
+            "type": "SPEND_ACTION",
+            "reason": "This action involves spending money or using paid services",
+            "title": "Spending Approval Required",
+            "approve_text": "APPROVE SPEND",
+            "reject_text": "No, don't spend",
+            "requires_exact_phrase": True,
+            "exact_phrase": "APPROVE SPEND"
+        }
     
     # Only checkpoint EXPLICIT external actions with action verbs
     external_triggers = ["send this email", "post this to", "share this with", "publish now"]
