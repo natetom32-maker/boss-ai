@@ -1023,11 +1023,38 @@ async def create_avatar_stream(
     
     Returns SDP offer and ICE servers for WebRTC connection.
     The frontend uses this to establish a real-time video stream.
+    
+    Note: D-ID has a limit on concurrent sessions. This endpoint will
+    return an existing active stream if available, or create a new one.
     """
     if not DID_API_KEY:
         raise HTTPException(status_code=500, detail="D-ID API key not configured")
     
     agent_id = request_data.agent_id if request_data and request_data.agent_id else DID_AGENT_ID
+    
+    # Check for existing active stream for this user
+    existing_stream = await db.avatar_streams.find_one({
+        "user_id": current_user.user_id,
+        "status": {"$in": ["created", "connected"]},
+        "created_at": {"$gte": datetime.now(timezone.utc) - timedelta(minutes=5)}
+    })
+    
+    if existing_stream:
+        # Return existing stream (still needs WebRTC reconnection on frontend)
+        return {
+            "stream_id": existing_stream["stream_id"],
+            "session_id": existing_stream["session_id"],
+            "offer": existing_stream.get("offer"),
+            "ice_servers": existing_stream.get("ice_servers", []),
+            "agent_id": existing_stream["agent_id"],
+            "reused": True
+        }
+    
+    # Mark old streams as expired
+    await db.avatar_streams.update_many(
+        {"user_id": current_user.user_id, "status": {"$in": ["created", "connected"]}},
+        {"$set": {"status": "expired"}}
+    )
     
     headers = {
         "Authorization": f"Basic {DID_API_KEY}",
@@ -1042,22 +1069,37 @@ async def create_avatar_stream(
         )
         
         if response.status_code != 200 and response.status_code != 201:
-            raise HTTPException(status_code=response.status_code, detail=f"D-ID stream creation failed: {response.text}")
+            error_text = response.text
+            # If max sessions reached, provide helpful message
+            if "Max user sessions" in error_text:
+                raise HTTPException(
+                    status_code=429, 
+                    detail="D-ID session limit reached. Please wait a moment and try again."
+                )
+            raise HTTPException(status_code=response.status_code, detail=f"D-ID stream creation failed: {error_text}")
         
         stream_data = response.json()
         
-        # Store stream info
+        # Store stream info with full offer data
         await db.avatar_streams.insert_one({
             "stream_id": stream_data.get("id"),
             "user_id": current_user.user_id,
             "agent_id": agent_id,
             "session_id": stream_data.get("session_id"),
+            "offer": stream_data.get("offer"),
+            "ice_servers": stream_data.get("ice_servers", []),
             "status": "created",
             "created_at": datetime.now(timezone.utc)
         })
         
         return {
             "stream_id": stream_data.get("id"),
+            "session_id": stream_data.get("session_id"),
+            "offer": stream_data.get("offer"),
+            "ice_servers": stream_data.get("ice_servers", []),
+            "agent_id": agent_id,
+            "reused": False
+        }
             "session_id": stream_data.get("session_id"),
             "offer": stream_data.get("offer"),  # SDP offer for WebRTC
             "ice_servers": stream_data.get("ice_servers", []),
