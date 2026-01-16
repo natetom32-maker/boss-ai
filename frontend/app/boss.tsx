@@ -446,7 +446,7 @@ export default function BossScreen() {
                 }}
               />
             ) : (
-              <Image source={{ uri: BOSS_AVATAR_IMAGE }} style={styles.fullAvatar} />
+              <Image source={BOSS_AVATAR_LOCAL} style={styles.fullAvatar} />
             )}
             
             <Text style={styles.avatarModalTitle}>Boss AI</Text>
