@@ -50,6 +50,9 @@ interface Message {
     checkpoint_id: string;
     type: string;
     reason: string;
+    title?: string;
+    approve_text?: string;
+    reject_text?: string;
   };
   videoUrl?: string;
   videoStatus?: 'generating' | 'ready' | 'failed';
