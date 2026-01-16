@@ -9,16 +9,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
+  Image,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
 import { useAuth } from '../src/context/AuthContext';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-// Boss AI Avatar Video URL - the stylized listening state
-const BOSS_AVATAR_VIDEO = 'https://customer-assets.emergentagent.com/job_2aa2b813-f5fe-4ade-a9d9-bc418df86344/artifacts/ymhkyqfe_generated_video_hd.mp4';
+// Boss AI Avatar - YOUR face (Nate)
+const BOSS_AVATAR_IMAGE = 'https://customer-assets.emergentagent.com/job_2aa2b813-f5fe-4ade-a9d9-bc418df86344/artifacts/maffvqbd_nate%20without%20background.png';
 
 export default function Index() {
   const { isAuthenticated, isLoading, login, register, user } = useAuth();
