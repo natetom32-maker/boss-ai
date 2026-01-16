@@ -178,13 +178,9 @@ export default function Index() {
         {/* Hero Section */}
         <View style={styles.heroSection}>
           <View style={styles.bossAvatarHero}>
-            <Video
-              source={{ uri: BOSS_AVATAR_VIDEO }}
-              style={styles.avatarVideo}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay={true}
-              isLooping={true}
-              isMuted={true}
+            <Image
+              source={{ uri: BOSS_AVATAR_IMAGE }}
+              style={styles.avatarImage}
             />
           </View>
           
