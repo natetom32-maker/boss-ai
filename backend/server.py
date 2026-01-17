@@ -850,19 +850,24 @@ async def _create_did_talk(script_text: str, voice_id: str = "en-US-JennyNeural"
     }
     
     # Use the Boss AI avatar image as source
+    # Use ElevenLabs for premium voice quality
     payload = {
         "source_url": BOSS_AVATAR_IMAGE,
         "script": {
             "type": "text",
             "input": script_text,
             "provider": {
-                "type": "microsoft",
-                "voice_id": voice_id
+                "type": "elevenlabs",
+                "voice_id": ELEVENLABS_VOICE_ID,
+                "voice_config": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.75
+                }
             }
         },
         "config": {
             "fluent": True,
-            "pad_audio": 0.5
+            "pad_audio": 0.3
         }
     }
     
