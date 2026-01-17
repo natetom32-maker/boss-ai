@@ -1047,7 +1047,7 @@ async def get_avatar_videos(
 # ================== D-ID STREAMING (Real-time Avatar) ==================
 
 # D-ID Agent ID for streaming (uses existing agent with ElevenLabs voice)
-DID_AGENT_ID = "v2_agt_4i425Kpe"
+DID_AGENT_ID = os.environ.get('DID_AGENT_ID', 'v2_agt_WV53uomE')  # Boss AI Agent
 
 class StreamRequest(BaseModel):
     """Request to create a D-ID stream"""
