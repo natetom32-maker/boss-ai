@@ -5,10 +5,14 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import re
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Dict, Any, Literal
 import uuid
+import secrets
+import time
+import hashlib
 from datetime import datetime, timezone, timedelta
 import httpx
 import asyncio
@@ -30,6 +34,9 @@ EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 # D-ID API Key
 DID_API_KEY = os.environ.get('DID_API_KEY', '')
 DID_API_BASE = 'https://api.d-id.com'
+
+# Noiz API Key (for cloned voice TTS)
+NOIZ_API_KEY = os.environ.get('NOIZ_API_KEY', '')
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -546,23 +553,49 @@ async def _rebuild_state_from_events(user_id: str):
 async def _get_memory_for_context(
     user_id: str,
     project_id: Optional[str] = None,
-    scopes: List[MemoryScope] = None
+    scopes: List[MemoryScope] = None,
+    query_text: Optional[str] = None,
+    per_scope_limit: int = 20,
+    total_limit: int = 25,
 ) -> List[Dict[str, Any]]:
-    """Get relevant memory for Boss AI context"""
+    """Get bounded, relevant-ish memory for Boss AI context.
+
+    IMPORTANT: We do NOT feed full chat history; we feed small, structured memory.
+    Token cost stays sane by:
+      - limiting items
+      - preferring recently-updated keys
+      - doing a cheap keyword match when query_text is present
+    """
     if scopes is None:
         scopes = ["L0_PRIME", "L2_PROJECT"] if project_id else ["L0_PRIME"]
-    
-    memory_items = []
-    
+
+    query_tokens = set()
+    if query_text:
+        qt = re.sub(r"[^a-zA-Z0-9 ]+", " ", query_text.lower())
+        query_tokens = {t for t in qt.split() if len(t) >= 4}
+
+    memory_items: List[Dict[str, Any]] = []
+
     for scope in scopes:
-        query = {"user_id": user_id, "scope": scope}
+        q: Dict[str, Any] = {"user_id": user_id, "scope": scope}
         if scope == "L2_PROJECT" and project_id:
-            query["project_id"] = project_id
-        
-        items = await db.memory_state.find(query, {"_id": 0}).to_list(100)
+            q["project_id"] = project_id
+
+        # Prefer recency to keep context short and useful
+        items = await db.memory_state.find(q, {"_id": 0}).sort("updated_at", -1).limit(per_scope_limit).to_list(per_scope_limit)
         memory_items.extend(items)
-    
-    return memory_items
+
+    # Cheap relevance bump: if tokens match key/value text, float those to the top
+    if query_tokens:
+        def score(it: Dict[str, Any]) -> int:
+            hay = f"{it.get('key','')} {it.get('value','')}".lower()
+            return sum(1 for t in query_tokens if t in hay)
+        memory_items.sort(key=lambda it: (score(it), it.get('updated_at') or datetime.min), reverse=True)
+    else:
+        # already sorted per-scope by updated_at; keep as-is
+        pass
+
+    return memory_items[:total_limit]
 
 # Memory Routes
 @api_router.post("/memory/events")
@@ -1224,7 +1257,126 @@ async def close_avatar_stream(
     
     return {"status": "closed", "stream_id": stream_id}
 
+# ================== NOIZ TTS (CLONED VOICE) ==================
+
+# In-memory, short-lived audio cache so the mobile client can play audio
+# via a simple URL (Audio.Sound can’t easily attach auth headers).
+NOIZ_TTS_CACHE: Dict[str, Dict[str, Any]] = {}
+NOIZ_TTS_TTL_SECONDS = 600  # 10 minutes
+
+class NoizTTSRequest(BaseModel):
+    text: str = Field(..., max_length=200)
+    voice_id: Optional[str] = None
+    output_format: str = 'mp3'  # 'mp3' or 'wav'
+    speed: Optional[float] = None
+    quality_preset: Optional[int] = None
+
+class NoizTTSResponse(BaseModel):
+    tts_id: str
+    playback_url: str
+    expires_at: int
+    format: str
+
+
+def _noiz_cache_cleanup() -> None:
+    now = int(time.time())
+    expired = [k for k, v in NOIZ_TTS_CACHE.items() if v.get('expires_at', 0) <= now]
+    for k in expired:
+        NOIZ_TTS_CACHE.pop(k, None)
+
+
+@api_router.post('/tts/noiz', response_model=NoizTTSResponse)
+async def noiz_tts_generate(
+    payload: NoizTTSRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """Generate TTS audio via NOIZ and return a short-lived playback URL.
+
+    This keeps NOIZ_API_KEY server-side and avoids client-side key leaks.
+    """
+    if not NOIZ_API_KEY:
+        raise HTTPException(status_code=400, detail='NOIZ_API_KEY not configured')
+
+    _noiz_cache_cleanup()
+
+    # NOIZ docs: POST https://noiz.ai/v1/text-to-speech (multipart/form-data)
+    files = {
+        'text': (None, payload.text),
+        'output_format': (None, payload.output_format),
+    }
+    if payload.voice_id:
+        files['voice_id'] = (None, payload.voice_id)
+    if payload.speed is not None:
+        files['speed'] = (None, str(payload.speed))
+    if payload.quality_preset is not None:
+        files['quality_preset'] = (None, str(payload.quality_preset))
+
+    headers = {
+        'Authorization': NOIZ_API_KEY,
+        'Accept': '*/*',
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post('https://noiz.ai/v1/text-to-speech', headers=headers, files=files)
+
+    if resp.status_code != 200:
+        # Bubble up a useful error
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text[:500]
+        raise HTTPException(status_code=resp.status_code, detail=f'NOIZ TTS error: {detail}')
+
+    # Cache the bytes with a signed token
+    tts_id = uuid.uuid4().hex
+    token = secrets.token_urlsafe(24)
+    now = int(time.time())
+    expires_at = now + NOIZ_TTS_TTL_SECONDS
+
+    media_type = resp.headers.get('content-type') or ('audio/mpeg' if payload.output_format == 'mp3' else 'audio/wav')
+    NOIZ_TTS_CACHE[tts_id] = {
+        'token': token,
+        'expires_at': expires_at,
+        'media_type': media_type,
+        'audio_bytes': resp.content,
+        'format': payload.output_format,
+    }
+
+    # Build a playback URL the client can hand to expo-av.
+    base = str(request.base_url).rstrip('/')
+    playback_url = f"{base}/api/tts/noiz/{tts_id}?token={token}"
+
+    return NoizTTSResponse(
+        tts_id=tts_id,
+        playback_url=playback_url,
+        expires_at=expires_at,
+        format=payload.output_format,
+    )
+
+
+@api_router.get('/tts/noiz/{tts_id}')
+async def noiz_tts_playback(tts_id: str, token: str):
+    """Stream cached audio to the client.
+
+    Intentionally NOT JWT-protected because expo-av can’t send auth headers.
+    Access is gated by a short-lived token in the URL.
+    """
+    _noiz_cache_cleanup()
+    item = NOIZ_TTS_CACHE.get(tts_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='TTS not found or expired')
+    if token != item.get('token'):
+        raise HTTPException(status_code=403, detail='Invalid token')
+
+    return Response(content=item['audio_bytes'], media_type=item.get('media_type', 'audio/mpeg'))
+
+
 # ================== BOSS AI ==================
+
+# In-memory dedupe to prevent accidental double-sends from burning credits
+RECENT_LLM_DEDUPE: Dict[str, Dict[str, Any]] = {}
+RECENT_LLM_DEDUPE_TTL = 20  # seconds
 
 # Available models for auto-selection
 MODELS = [
@@ -1346,46 +1498,60 @@ async def send_boss_message(
             model_used="none"
         )
     
-    # Get relevant memory
-    memory_items = []
+    # De-dupe accidental rapid repeats (saves credits)
+    now_ts = time.time()
+    message_hash = hashlib.sha256(f"{current_user.user_id}|{message_data.project_id or 'global'}|{message_data.message.strip()}".encode('utf-8')).hexdigest()
+    cached = RECENT_LLM_DEDUPE.get(message_hash)
+    if cached and (now_ts - cached['ts']) <= RECENT_LLM_DEDUPE_TTL:
+        return cached['response']
+
+    # Get relevant memory (bounded)
+    memory_items: List[Dict[str, Any]] = []
     if message_data.include_memory:
         memory_items = await _get_memory_for_context(
             current_user.user_id,
-            message_data.project_id
+            message_data.project_id,
+            query_text=message_data.message,
+            per_scope_limit=15,
+            total_limit=20,
         )
-    
-    # Build context from memory
+
+    # Build context from memory (bounded + clipped)
+    def _clip(val: Any, n: int = 220) -> str:
+        try:
+            s = val if isinstance(val, str) else str(val)
+        except Exception:
+            s = "[unprintable]"
+        s = s.replace("\n", " ").strip()
+        return s if len(s) <= n else s[:n] + "..."
+
     memory_context = ""
     if memory_items:
         memory_context = "\n\nRelevant Memory (decisions and preferences):\n"
-        for item in memory_items:
-            memory_context += f"- [{item['scope']}] {item['key']}: {item['value']}\n"
-    
+        for item in memory_items[:20]:
+            memory_context += f"- [{item.get('scope')}] {item.get('key')}: {_clip(item.get('value'))}\n"
+
     # Auto-select model
     selected_model = _select_model(message_data.message)
     
     # Build system message for Boss AI
-    system_message = """You are Boss AI - an intelligent operating layer that remembers decisions, not conversations.
+    system_message = """You are Boss AI — an AI operating layer.
 
-Core Principles:
-1. AUTOPILOT: Keep going automatically. Never ask "should I proceed?" unless hitting a checkpoint.
-2. NO OBVIOUS QUESTIONS: Don't ask what the user already told you or things you can figure out.
-3. DECISIONS > CONVERSATIONS: You remember and reference decisions made, not chat history.
-4. MEMORY LAYERS: You have access to the user's preferences (L0) and project context (L2).
-5. EFFICIENCY: Be concise and action-oriented.
+Rules:
+- Use structured memory (below). Do NOT rely on chat history.
+- Be concise by default. If the user didn’t ask for a deep dive, keep it tight.
+- Proceed automatically. Only stop for checkpoints: send/share externally, spend money, destructive deletes, sensitive legal/medical.
 
-When responding:
-- Reference relevant memories/decisions when appropriate
-- Proceed with tasks automatically
-- Only pause for checkpoints: sending/sharing, spending money, deleting data, legal/medical claims
-- State what you're doing, not asking permission
+Output style:
+- Prefer bullets and concrete next steps.
+- Keep replies under ~200 words unless the user asks for more.
 """ + memory_context
     
     try:
         # Initialize chat with selected model
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
-            session_id=f"boss_{current_user.user_id}_{message_data.project_id or 'global'}",
+            session_id=f"boss_{current_user.user_id}_{message_data.project_id or 'global'}_{uuid.uuid4().hex[:8]}",
             system_message=system_message
         ).with_model(selected_model["provider"], selected_model["model"])
         
@@ -1429,8 +1595,7 @@ When responding:
             except Exception as e:
                 logger.error(f"Video generation error: {e}")
                 video_status = "failed"
-        
-        return BossResponse(
+        boss_response = BossResponse(
             response=response,
             memory_used=[{"key": m["key"], "scope": m["scope"]} for m in memory_items],
             decisions_made=[],
@@ -1439,7 +1604,10 @@ When responding:
             video_url=video_url,
             video_status=video_status
         )
-        
+
+        RECENT_LLM_DEDUPE[message_hash] = {'ts': now_ts, 'response': boss_response}
+        return boss_response
+
     except Exception as e:
         logger.error(f"Boss AI error: {e}")
         raise HTTPException(status_code=500, detail=f"Boss AI error: {str(e)}")

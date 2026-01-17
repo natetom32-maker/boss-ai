@@ -16,7 +16,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Video, ResizeMode } from 'expo-av';
+import { Video, ResizeMode, Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { useBossStore } from '../src/store/bossStore';
 import { useAuth } from '../src/context/AuthContext';
@@ -56,6 +56,7 @@ export default function BossScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
   const { user, logout } = useAuth();
   
   const {
@@ -143,7 +144,7 @@ export default function BossScreen() {
    */
   const speakWithTTS = async (text: string) => {
     try {
-      await Speech.stop();
+      await stopSpeaking();
       setAvatarState('speaking');
       
       Speech.speak(text, {
@@ -159,10 +160,61 @@ export default function BossScreen() {
   };
 
   /**
+   * Noiz cloned voice (audio-only). Uses backend to keep NOIZ_API_KEY private.
+   */
+  const speakWithNoiz = async (text: string) => {
+    try {
+      await stopSpeaking();
+      setAvatarState('speaking');
+
+      const voiceId = process.env.EXPO_PUBLIC_NOIZ_VOICE_ID;
+      const payload: any = {
+        text: text.slice(0, 200),
+        output_format: 'mp3',
+      };
+      if (voiceId) payload.voice_id = voiceId;
+
+      const res = await api.post('/tts/noiz', payload);
+      const playbackUrl: string = res.data.playback_url;
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: playbackUrl },
+        { shouldPlay: true }
+      );
+
+      soundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((status: any) => {
+        if (status?.isLoaded && status.didJustFinish) {
+          setAvatarState('idle');
+          sound.unloadAsync().catch(() => {});
+          soundRef.current = null;
+        }
+      });
+    } catch (e) {
+      console.error('Noiz TTS failed, falling back to system TTS:', e);
+      speakWithTTS(text);
+    }
+  };
+
+
+  /**
    * Stop speaking
    */
   const stopSpeaking = async () => {
-    await Speech.stop();
+    try {
+      await Speech.stop();
+    } catch {}
+
+    if (soundRef.current) {
+      try {
+        await soundRef.current.stopAsync();
+      } catch {}
+      try {
+        await soundRef.current.unloadAsync();
+      } catch {}
+      soundRef.current = null;
+    }
+
     setCurrentVideoUrl(null);
     setAvatarState('idle');
   };
@@ -203,15 +255,9 @@ export default function BossScreen() {
       setAvatarState('idle');
       fetchMemoryReceipt(currentProject?.project_id);
 
-      // Speak response if requested (generates video of YOUR face)
+      // Speak response if requested (cloned voice first; avatar video is manual via the speaker icon)
       if (shouldSpeak && !response.checkpoint_required) {
-        const videoUrl = await generateAvatarVideo(response.response, bossMessage.id);
-        if (videoUrl) {
-          playAvatarVideo(videoUrl);
-        } else {
-          // Fallback to TTS if video fails
-          speakWithTTS(response.response);
-        }
+        await speakWithNoiz(response.response);
       }
     } catch (error: any) {
       setAvatarState('idle');
@@ -238,7 +284,7 @@ export default function BossScreen() {
       if (videoUrl) {
         playAvatarVideo(videoUrl);
       } else {
-        speakWithTTS(msg.content);
+        await speakWithNoiz(msg.content);
       }
     }
   };
