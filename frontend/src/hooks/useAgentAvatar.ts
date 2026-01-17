@@ -195,7 +195,7 @@ export function useAgentAvatar(): UseAgentAvatarReturn {
 
   /**
    * Make the avatar speak text in real-time
-   * This sends text directly to the agent - the avatar speaks it immediately
+   * Uses agent.speak() to speak EXACTLY the text without LLM processing
    */
   const speak = useCallback(async (text: string): Promise<boolean> => {
     if (!agentRef.current || !state.isConnected) {
@@ -208,11 +208,11 @@ export function useAgentAvatar(): UseAgentAvatarReturn {
     }
 
     try {
-      console.log('[Agent] Speaking:', text.substring(0, 50) + '...');
+      console.log('[Agent] Speaking (direct):', text.substring(0, 50) + '...');
       
-      // The agent.chat() method makes the avatar speak in real-time
-      // Note: The agent's LLM will process this, but we've set it to "repeat exactly"
-      await agentRef.current.chat(text);
+      // Use agent.speak() to make the avatar speak EXACTLY this text
+      // This bypasses the agent's LLM and speaks the text directly
+      await agentRef.current.speak(text);
 
       return true;
     } catch (error: any) {
