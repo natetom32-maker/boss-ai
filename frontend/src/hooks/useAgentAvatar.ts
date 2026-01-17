@@ -123,12 +123,12 @@ export function useAgentAvatar(): UseAgentAvatarReturn {
 
       console.log('[Agent] Creating agent manager...');
 
-      const agent = sdk.createAgentManager({
+      // createAgentManager returns a Promise<AgentManager>
+      const agent = await sdk.createAgentManager(DID_AGENT_ID, {
         auth: {
-          type: 'client-key',
+          type: 'key',
           clientKey: DID_CLIENT_KEY,
         },
-        agentId: DID_AGENT_ID,
         callbacks: {
           onVideoStateChange: (videoState: string) => {
             console.log('[Agent] Video state:', videoState);
@@ -147,12 +147,12 @@ export function useAgentAvatar(): UseAgentAvatarReturn {
             console.log('[Agent] Started speaking');
             setState(prev => ({ ...prev, isSpeaking: true }));
           },
-          onAgentEndSpeaking: () => {
+          onAgentStopSpeaking: () => {
             console.log('[Agent] Stopped speaking');
             setState(prev => ({ ...prev, isSpeaking: false }));
           },
-          onAgentMessage: (message: any) => {
-            console.log('[Agent] Message:', message);
+          onNewMessage: (messages: any) => {
+            console.log('[Agent] New message:', messages);
           },
           onDisconnect: () => {
             console.log('[Agent] Disconnected');
@@ -163,7 +163,7 @@ export function useAgentAvatar(): UseAgentAvatarReturn {
               isSpeaking: false,
             }));
           },
-          onVideoTrackAvailable: (track: MediaStreamTrack) => {
+          onVideoTrack: (track: MediaStreamTrack) => {
             console.log('[Agent] Video track available');
             if (videoRef.current) {
               const stream = new MediaStream([track]);
@@ -176,9 +176,7 @@ export function useAgentAvatar(): UseAgentAvatarReturn {
 
       agentRef.current = agent;
 
-      console.log('[Agent] Connecting...');
-      await agent.connect();
-
+      // The agent is already connected after createAgentManager resolves
       setState(prev => ({
         ...prev,
         isConnected: true,
