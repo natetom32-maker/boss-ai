@@ -256,8 +256,8 @@ export function useRealtimeAvatar(): UseRealtimeAvatarReturn {
     try {
       console.log('[Avatar] Speaking:', text.substring(0, 50) + '...');
       
-      // Use D-ID Agents chat endpoint for real-time speech
-      await api.post('/avatar/stream/chat', {
+      // Use D-ID Agents speak endpoint for real-time speech
+      await api.post('/avatar/stream/speak', {
         stream_id: streamIdRef.current,
         session_id: sessionIdRef.current,
         text: text,
