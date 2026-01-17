@@ -253,7 +253,7 @@ export default function BossScreen() {
     setAvatarState('speaking');
     setShowAvatarModal(true); // Show the avatar modal for streaming video
     
-    const success = await realtimeAvatar.speak(text);
+    const success = await agentAvatar.speak(text);
     
     if (!success) {
       setAvatarState('idle');
