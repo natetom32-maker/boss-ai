@@ -21,7 +21,7 @@ import * as Speech from 'expo-speech';
 import { useBossStore } from '../src/store/bossStore';
 import { useAuth } from '../src/context/AuthContext';
 import { api } from '../src/services/api';
-import { useRealtimeAvatar } from '../src/hooks/useRealtimeAvatar';
+import { useAgentAvatar } from '../src/hooks/useAgentAvatar';
 
 /**
  * UNIFIED BOSS AI ARCHITECTURE
