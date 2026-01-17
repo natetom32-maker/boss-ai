@@ -242,6 +242,27 @@ export default function BossScreen() {
   };
 
   /**
+   * Speak using real-time avatar (WebRTC stream with ElevenLabs voice)
+   */
+  const speakWithRealtimeAvatar = async (text: string): Promise<boolean> => {
+    if (!realtimeAvatar.state.isConnected) {
+      console.log('[BossAI] Real-time avatar not connected, falling back to video');
+      return false;
+    }
+    
+    setAvatarState('speaking');
+    setShowAvatarModal(true); // Show the avatar modal for streaming video
+    
+    const success = await realtimeAvatar.speak(text);
+    
+    if (!success) {
+      setAvatarState('idle');
+    }
+    
+    return success;
+  };
+
+  /**
    * Send message to Boss AI
    */
   const handleSend = async (shouldSpeak: boolean = false) => {
@@ -277,9 +298,15 @@ export default function BossScreen() {
       setAvatarState('idle');
       fetchMemoryReceipt(currentProject?.project_id);
 
-      // Speak response if requested (cloned voice first; avatar video is manual via the speaker icon)
-      if (shouldSpeak && !response.checkpoint_required) {
-        await speakWithNoiz(response.response);
+      // Auto-speak with real-time avatar if connected (web), otherwise use fallback
+      if (!response.checkpoint_required) {
+        if (useRealtimeMode && realtimeAvatar.state.isConnected) {
+          // Use real-time WebRTC avatar (instant!)
+          await speakWithRealtimeAvatar(response.response);
+        } else if (shouldSpeak) {
+          // Fallback to Noiz cloned voice (audio only)
+          await speakWithNoiz(response.response);
+        }
       }
     } catch (error: any) {
       setAvatarState('idle');
