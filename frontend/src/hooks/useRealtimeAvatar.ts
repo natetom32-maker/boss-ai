@@ -297,7 +297,7 @@ export function useRealtimeAvatar(): UseRealtimeAvatarReturn {
     // Close stream on backend/D-ID
     if (streamIdRef.current) {
       try {
-        await api.delete(`/avatar/talks-stream/${streamIdRef.current}`);
+        await api.delete(`/avatar/stream/${streamIdRef.current}`);
       } catch (e) {
         console.log('[Avatar] Stream close error:', e);
       }
