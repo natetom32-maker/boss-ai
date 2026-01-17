@@ -60,8 +60,8 @@ export default function BossScreen() {
   const soundRef = useRef<Audio.Sound | null>(null);
   const { user, logout } = useAuth();
   
-  // Real-time avatar streaming (WebRTC)
-  const realtimeAvatar = useRealtimeAvatar();
+  // D-ID Agent SDK for real-time avatar (WebRTC)
+  const agentAvatar = useAgentAvatar();
   const [useRealtimeMode, setUseRealtimeMode] = useState(Platform.OS === 'web');
   
   const {
@@ -82,19 +82,19 @@ export default function BossScreen() {
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [currentVideoUrl, setCurrentVideoUrl] = useState<string | null>(null);
 
-  // Connect to real-time avatar on mount (web only for now)
+  // Connect to D-ID Agent on mount (web only)
   useEffect(() => {
     if (useRealtimeMode && Platform.OS === 'web') {
-      console.log('[BossAI] Connecting to real-time avatar...');
-      realtimeAvatar.connect().then(connected => {
-        console.log('[BossAI] Real-time avatar connected:', connected);
+      console.log('[BossAI] Connecting to D-ID Agent...');
+      agentAvatar.connect().then(connected => {
+        console.log('[BossAI] D-ID Agent connected:', connected);
       });
     }
     
     // Cleanup on unmount
     return () => {
-      if (realtimeAvatar.state.isConnected) {
-        realtimeAvatar.disconnect();
+      if (agentAvatar.state.isConnected) {
+        agentAvatar.disconnect();
       }
     };
   }, [useRealtimeMode]);
