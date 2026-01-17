@@ -56,7 +56,7 @@ interface UseAgentAvatarReturn {
 
 // D-ID Client Key (obtained from D-ID API)
 const DID_CLIENT_KEY = 'Z29vZ2xlLW9hdXRoMnwxMTM0MDI1Nzg1OTM5NTA5MTQ3OTU6b0dOeW5WYnJfb0drTU1DVDRoMWJ1';
-const DID_AGENT_ID = 'v2_agt_Pk5-SVMv';  // Boss AI with YOUR ElevenLabs voice
+const DID_AGENT_ID = 'v2_agt_CgpXmRCr';  // Boss AI (embed enabled)
 
 export function useAgentAvatar(): UseAgentAvatarReturn {
   const [state, setState] = useState<AgentState>({
