@@ -1435,6 +1435,10 @@ async def talks_stream_speak(
         "Content-Type": "application/json"
     }
     
+    # Add ElevenLabs API key for premium voice
+    if ELEVENLABS_API_KEY:
+        headers["x-api-key-external"] = json.dumps({"elevenlabs": ELEVENLABS_API_KEY})
+    
     # Use ElevenLabs voice for TTS
     payload = {
         "script": {
