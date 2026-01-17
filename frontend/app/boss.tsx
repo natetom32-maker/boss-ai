@@ -300,7 +300,7 @@ export default function BossScreen() {
 
       // Auto-speak with real-time avatar if connected (web), otherwise use fallback
       if (!response.checkpoint_required) {
-        if (useRealtimeMode && realtimeAvatar.state.isConnected) {
+        if (useRealtimeMode && agentAvatar.state.isConnected) {
           // Use real-time WebRTC avatar (instant!)
           await speakWithRealtimeAvatar(response.response);
         } else if (shouldSpeak) {
