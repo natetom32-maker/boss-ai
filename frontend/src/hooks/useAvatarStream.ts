@@ -26,7 +26,7 @@ interface StreamState {
 
 interface UseAvatarStreamReturn {
   state: StreamState;
-  videoRef: React.RefObject<HTMLVideoElement>;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
   connect: () => Promise<boolean>;
   speak: (text: string) => Promise<boolean>;
   disconnect: () => Promise<void>;
