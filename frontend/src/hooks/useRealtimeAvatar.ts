@@ -127,7 +127,7 @@ export function useRealtimeAvatar(): UseRealtimeAvatarReturn {
       peerConnection.onicecandidate = async (event) => {
         if (event.candidate && streamIdRef.current && sessionIdRef.current) {
           try {
-            await api.post('/avatar/talks-stream/ice', {
+            await api.post('/avatar/stream/ice', {
               stream_id: streamIdRef.current,
               session_id: sessionIdRef.current,
               candidate: event.candidate.toJSON(),
