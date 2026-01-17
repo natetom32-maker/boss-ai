@@ -83,9 +83,9 @@ export function useRealtimeAvatar(): UseRealtimeAvatarReturn {
     setState(prev => ({ ...prev, isConnecting: true, error: null }));
 
     try {
-      // 1. Create stream on backend (which creates D-ID Talks stream)
-      console.log('[Avatar] Creating real-time stream...');
-      const createResponse = await api.post('/avatar/talks-stream/create', {});
+      // 1. Create stream on backend (which creates D-ID Agents stream)
+      console.log('[Avatar] Creating real-time agent stream...');
+      const createResponse = await api.post('/avatar/stream/create', {});
       const { stream_id, session_id, offer, ice_servers, reused } = createResponse.data;
 
       console.log('[Avatar] Stream created:', { stream_id, reused });
