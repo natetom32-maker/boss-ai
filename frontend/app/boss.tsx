@@ -540,16 +540,43 @@ export default function BossScreen() {
                   }
                 }}
               />
+            ) : realtimeAvatar.state.isConnected && Platform.OS === 'web' ? (
+              // Real-time WebRTC streaming avatar
+              <View style={styles.fullAvatarVideo}>
+                <video
+                  ref={realtimeAvatar.videoRef as any}
+                  autoPlay
+                  playsInline
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 20 }}
+                />
+              </View>
             ) : (
               <Image source={BOSS_AVATAR_LOCAL} style={styles.fullAvatar} />
             )}
             
             <Text style={styles.avatarModalTitle}>Boss AI</Text>
             <Text style={styles.avatarModalSubtitle}>
-              {currentVideoUrl ? 'Speaking...' : 'Operating Layer'}
+              {realtimeAvatar.state.isSpeaking ? 'Speaking (Real-time)...' : 
+               currentVideoUrl ? 'Speaking...' : 
+               realtimeAvatar.state.isConnected ? 'Real-time Mode' : 'Operating Layer'}
             </Text>
             
-            {currentVideoUrl && (
+            {/* Connection status indicator */}
+            {Platform.OS === 'web' && (
+              <View style={styles.connectionStatus}>
+                <View style={[
+                  styles.connectionDot, 
+                  { backgroundColor: realtimeAvatar.state.isConnected ? '#22C55E' : '#EF4444' }
+                ]} />
+                <Text style={styles.connectionText}>
+                  {realtimeAvatar.state.isConnecting ? 'Connecting...' :
+                   realtimeAvatar.state.isConnected ? 'Real-time Connected' : 
+                   realtimeAvatar.state.error || 'Disconnected'}
+                </Text>
+              </View>
+            )}
+            
+            {(currentVideoUrl || realtimeAvatar.state.isSpeaking) && (
               <TouchableOpacity style={styles.stopButton} onPress={stopSpeaking}>
                 <Ionicons name="stop-circle" size={24} color="#EF4444" />
                 <Text style={styles.stopButtonText}>Stop</Text>
