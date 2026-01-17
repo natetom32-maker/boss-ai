@@ -844,10 +844,15 @@ async def _create_did_talk(script_text: str, voice_id: str = "en-US-JennyNeural"
     if not DID_API_KEY:
         raise HTTPException(status_code=500, detail="D-ID API key not configured")
     
+    # Build headers - include ElevenLabs API key for premium voice
     headers = {
         "Authorization": f"Basic {DID_API_KEY}",
         "Content-Type": "application/json"
     }
+    
+    # Add ElevenLabs API key if available
+    if ELEVENLABS_API_KEY:
+        headers["x-api-key-external"] = json.dumps({"elevenlabs": ELEVENLABS_API_KEY})
     
     # Use the Boss AI avatar image as source
     # Use ElevenLabs for premium voice quality
