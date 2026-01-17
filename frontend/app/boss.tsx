@@ -245,7 +245,7 @@ export default function BossScreen() {
    * Speak using real-time avatar (WebRTC stream with ElevenLabs voice)
    */
   const speakWithRealtimeAvatar = async (text: string): Promise<boolean> => {
-    if (!realtimeAvatar.state.isConnected) {
+    if (!agentAvatar.state.isConnected) {
       console.log('[BossAI] Real-time avatar not connected, falling back to video');
       return false;
     }
