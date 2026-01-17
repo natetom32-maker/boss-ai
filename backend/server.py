@@ -1263,6 +1263,224 @@ async def close_avatar_stream(
     
     return {"status": "closed", "stream_id": stream_id}
 
+# ================== D-ID TALKS STREAMS (Real-time with ElevenLabs) ==================
+
+class TalksStreamRequest(BaseModel):
+    """Request to create a D-ID Talks stream for real-time avatar with custom voice"""
+    source_url: Optional[str] = None  # Custom avatar image URL
+
+class TalksStreamSpeakRequest(BaseModel):
+    """Send text to speak via the talks stream"""
+    stream_id: str
+    session_id: str
+    text: str
+
+@api_router.post("/avatar/talks-stream/create")
+async def create_talks_stream(
+    request_data: TalksStreamRequest = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Create a D-ID Talks Stream for real-time avatar with ElevenLabs voice
+    
+    This uses the Talks Streams API which supports custom TTS providers like ElevenLabs.
+    Returns WebRTC connection info for real-time video streaming.
+    """
+    if not DID_API_KEY:
+        raise HTTPException(status_code=500, detail="D-ID API key not configured")
+    
+    source_url = request_data.source_url if request_data and request_data.source_url else BOSS_AVATAR_IMAGE
+    
+    # Check for existing active stream
+    existing_stream = await db.talks_streams.find_one({
+        "user_id": current_user.user_id,
+        "status": {"$in": ["created", "connected"]},
+        "created_at": {"$gte": datetime.now(timezone.utc) - timedelta(minutes=5)}
+    })
+    
+    if existing_stream:
+        return {
+            "stream_id": existing_stream["stream_id"],
+            "session_id": existing_stream["session_id"],
+            "offer": existing_stream.get("offer"),
+            "ice_servers": existing_stream.get("ice_servers", []),
+            "reused": True
+        }
+    
+    # Mark old streams as expired
+    await db.talks_streams.update_many(
+        {"user_id": current_user.user_id, "status": {"$in": ["created", "connected"]}},
+        {"$set": {"status": "expired"}}
+    )
+    
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"{DID_API_BASE}/talks/streams",
+            headers=headers,
+            json={
+                "source_url": source_url
+            }
+        )
+        
+        if response.status_code not in [200, 201]:
+            error_text = response.text
+            if "Max" in error_text and "session" in error_text.lower():
+                raise HTTPException(status_code=429, detail="D-ID session limit reached. Please wait and try again.")
+            raise HTTPException(status_code=response.status_code, detail=f"D-ID stream creation failed: {error_text}")
+        
+        stream_data = response.json()
+        
+        # Store stream info
+        await db.talks_streams.insert_one({
+            "stream_id": stream_data.get("id"),
+            "session_id": stream_data.get("session_id"),
+            "user_id": current_user.user_id,
+            "source_url": source_url,
+            "offer": stream_data.get("offer"),
+            "ice_servers": stream_data.get("ice_servers", []),
+            "status": "created",
+            "created_at": datetime.now(timezone.utc)
+        })
+        
+        return {
+            "stream_id": stream_data.get("id"),
+            "session_id": stream_data.get("session_id"),
+            "offer": stream_data.get("offer"),
+            "ice_servers": stream_data.get("ice_servers", []),
+            "reused": False
+        }
+
+@api_router.post("/avatar/talks-stream/sdp")
+async def submit_talks_stream_sdp(
+    stream_id: str,
+    session_id: str,
+    answer: dict,
+    current_user: User = Depends(get_current_user)
+):
+    """Submit SDP answer for WebRTC connection"""
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"{DID_API_BASE}/talks/streams/{stream_id}/sdp",
+            headers=headers,
+            json={"answer": answer, "session_id": session_id}
+        )
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"SDP submission failed: {response.text}")
+        
+        return response.json()
+
+@api_router.post("/avatar/talks-stream/ice")
+async def submit_talks_stream_ice(
+    stream_id: str,
+    session_id: str,
+    candidate: dict,
+    current_user: User = Depends(get_current_user)
+):
+    """Submit ICE candidate for WebRTC connection"""
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"{DID_API_BASE}/talks/streams/{stream_id}/ice",
+            headers=headers,
+            json={"candidate": candidate, "session_id": session_id}
+        )
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"ICE submission failed: {response.text}")
+        
+        return response.json()
+
+@api_router.post("/avatar/talks-stream/speak")
+async def talks_stream_speak(
+    request_data: TalksStreamSpeakRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Make the avatar speak using ElevenLabs voice in real-time
+    
+    This sends text to D-ID which uses ElevenLabs TTS and streams 
+    the talking avatar video in real-time via WebRTC.
+    """
+    if not DID_API_KEY:
+        raise HTTPException(status_code=500, detail="D-ID API key not configured")
+    
+    stream = await db.talks_streams.find_one({
+        "stream_id": request_data.stream_id, 
+        "user_id": current_user.user_id
+    })
+    if not stream:
+        raise HTTPException(status_code=404, detail="Stream not found")
+    
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    # Use ElevenLabs voice for TTS
+    payload = {
+        "script": {
+            "type": "text",
+            "input": request_data.text,
+            "provider": {
+                "type": "elevenlabs",
+                "voice_id": ELEVENLABS_VOICE_ID,
+                "voice_config": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.75
+                }
+            }
+        },
+        "session_id": request_data.session_id
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            f"{DID_API_BASE}/talks/streams/{request_data.stream_id}",
+            headers=headers,
+            json=payload
+        )
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"Stream speak failed: {response.text}")
+        
+        return {"status": "speaking", "text": request_data.text}
+
+@api_router.delete("/avatar/talks-stream/{stream_id}")
+async def close_talks_stream(
+    stream_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Close a D-ID Talks stream to free up session slot"""
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}"
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        await client.delete(
+            f"{DID_API_BASE}/talks/streams/{stream_id}",
+            headers=headers
+        )
+    
+    await db.talks_streams.update_one(
+        {"stream_id": stream_id},
+        {"$set": {"status": "closed", "closed_at": datetime.now(timezone.utc)}}
+    )
+    
+    return {"status": "closed", "stream_id": stream_id}
+
 # ================== NOIZ TTS (CLONED VOICE) ==================
 
 # In-memory, short-lived audio cache so the mobile client can play audio
