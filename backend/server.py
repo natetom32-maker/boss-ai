@@ -35,8 +35,9 @@ EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 DID_API_KEY = os.environ.get('DID_API_KEY', '')
 DID_API_BASE = 'https://api.d-id.com'
 
-# Noiz API Key (for cloned voice TTS)
-NOIZ_API_KEY = os.environ.get('NOIZ_API_KEY', '')
+# ElevenLabs API Key (for premium voice TTS)
+ELEVENLABS_API_KEY = os.environ.get('ELEVENLABS_API_KEY', '')
+ELEVENLABS_VOICE_ID = 'txVOh3pRAKnDHScalKiw'  # Custom voice
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
