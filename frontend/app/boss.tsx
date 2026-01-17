@@ -60,6 +60,10 @@ export default function BossScreen() {
   const soundRef = useRef<Audio.Sound | null>(null);
   const { user, logout } = useAuth();
   
+  // Real-time avatar streaming (WebRTC)
+  const realtimeAvatar = useRealtimeAvatar();
+  const [useRealtimeMode, setUseRealtimeMode] = useState(Platform.OS === 'web');
+  
   const {
     sendMessage,
     resolveCheckpoint,
@@ -77,6 +81,23 @@ export default function BossScreen() {
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [currentVideoUrl, setCurrentVideoUrl] = useState<string | null>(null);
+
+  // Connect to real-time avatar on mount (web only for now)
+  useEffect(() => {
+    if (useRealtimeMode && Platform.OS === 'web') {
+      console.log('[BossAI] Connecting to real-time avatar...');
+      realtimeAvatar.connect().then(connected => {
+        console.log('[BossAI] Real-time avatar connected:', connected);
+      });
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (realtimeAvatar.state.isConnected) {
+        realtimeAvatar.disconnect();
+      }
+    };
+  }, [useRealtimeMode]);
 
   useEffect(() => {
     fetchMemoryReceipt(currentProject?.project_id);
