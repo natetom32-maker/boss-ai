@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
   messagesContainer: { flex: 1 },
   messagesContent: { padding: 16 },
   emptyState: { alignItems: 'center', paddingTop: 60 },
-  emptyAvatar: { width: 120, height: 120, borderRadius: 60, backgroundColor: '#1A1A2E' },
+  emptyAvatar: { width: 200, height: 200, borderRadius: 100, backgroundColor: '#1A1A2E' },
   emptyTitle: { color: '#FFF', fontSize: 20, fontWeight: '600', marginTop: 20 },
   emptySubtitle: { color: '#666', fontSize: 14, textAlign: 'center', marginTop: 8, paddingHorizontal: 40 },
   tipText: { color: '#6366F1', fontSize: 12 },
