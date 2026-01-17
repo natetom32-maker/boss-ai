@@ -1219,15 +1219,23 @@ async def stream_speak(
     }
     
     # Send text directly to avatar to speak (no AI processing by D-ID)
+    # Format message with created_at timestamp as required by D-ID API
+    message_timestamp = datetime.now(timezone.utc).isoformat()
+    
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
-            f"https://api.d-id.com/agents/{agent_id}/streams/{request_data.stream_id}/chat",
+            f"https://api.d-id.com/agents/{agent_id}/chat/{request_data.stream_id}",
             headers=headers,
             json={
+                "sessionId": request_data.session_id,
                 "messages": [
-                    {"role": "user", "content": f"[SPEAK EXACTLY]: {request_data.text}"}
+                    {
+                        "role": "user", 
+                        "content": request_data.text,
+                        "created_at": message_timestamp
+                    }
                 ],
-                "stream": True
+                "streamOptions": {"stream": True}
             }
         )
         
