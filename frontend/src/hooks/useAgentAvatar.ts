@@ -130,10 +130,6 @@ export function useAgentAvatar(): UseAgentAvatarReturn {
           clientKey: DID_CLIENT_KEY,
         },
         callbacks: {
-          onVideoStateChange: (videoState: string) => {
-            console.log('[Agent] Video state:', videoState);
-            setState(prev => ({ ...prev, videoState }));
-          },
           onConnectionStateChange: (connectionState: string) => {
             console.log('[Agent] Connection state:', connectionState);
             const isConnected = connectionState === 'connected';
@@ -143,40 +139,38 @@ export function useAgentAvatar(): UseAgentAvatarReturn {
               isConnecting: connectionState === 'connecting',
             }));
           },
-          onAgentStartSpeaking: () => {
-            console.log('[Agent] Started speaking');
-            setState(prev => ({ ...prev, isSpeaking: true }));
+          onVideoStateChange: (videoState: string) => {
+            console.log('[Agent] Video state:', videoState);
+            setState(prev => ({ ...prev, videoState }));
           },
-          onAgentStopSpeaking: () => {
-            console.log('[Agent] Stopped speaking');
-            setState(prev => ({ ...prev, isSpeaking: false }));
-          },
-          onNewMessage: (messages: any) => {
-            console.log('[Agent] New message:', messages);
-          },
-          onDisconnect: () => {
-            console.log('[Agent] Disconnected');
-            setState(prev => ({ 
-              ...prev, 
-              isConnected: false, 
-              isConnecting: false,
-              isSpeaking: false,
-            }));
-          },
-          onVideoTrack: (track: MediaStreamTrack) => {
-            console.log('[Agent] Video track available');
+          // REQUIRED: This callback receives the video MediaStream
+          onSrcObjectReady: (srcObject: MediaStream) => {
+            console.log('[Agent] Video stream ready');
             if (videoRef.current) {
-              const stream = new MediaStream([track]);
-              videoRef.current.srcObject = stream;
+              videoRef.current.srcObject = srcObject;
               videoRef.current.play().catch(e => console.log('[Agent] Video play error:', e));
             }
+          },
+          onNewMessage: (messages: any[], type: string) => {
+            console.log('[Agent] New message:', type, messages);
+          },
+          onAgentActivityStateChange: (activityState: string) => {
+            console.log('[Agent] Activity state:', activityState);
+            const isSpeaking = activityState === 'speaking';
+            setState(prev => ({ ...prev, isSpeaking }));
+          },
+          onError: (error: Error) => {
+            console.error('[Agent] Error:', error);
+            setState(prev => ({ ...prev, error: error.message }));
           },
         },
       });
 
       agentRef.current = agent;
 
-      // The agent is already connected after createAgentManager resolves
+      // Now connect to the stream
+      console.log('[Agent] Connecting...');
+      await agent.connect();
       setState(prev => ({
         ...prev,
         isConnected: true,
