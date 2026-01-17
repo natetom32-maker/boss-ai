@@ -196,7 +196,7 @@ export function useRealtimeAvatar(): UseRealtimeAvatarReturn {
 
       // 9. Send answer to D-ID via backend
       console.log('[Avatar] Sending SDP answer...');
-      await api.post('/avatar/talks-stream/sdp', {
+      await api.post('/avatar/stream/sdp', {
         stream_id,
         session_id,
         answer: {
